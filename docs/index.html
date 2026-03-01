@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ferricula | Identity-Scoped Cognitive Memory</title>
+
+    <!-- Chosen Palette: Ferric White (Background: #f5f5f4, Surface: #ffffff, Accents: Rust Red #b91c1c, Amber #d97706, Emerald #059669, Purple #7c3aed) -->
+    <!-- Application Structure Plan:
+         The SPA is designed to bridge the gap between high-level thermodynamic theory and low-level bitwise implementation.
+         1. The Manifold (Hero/Dashboard): High-level system state and the decay philosophy.
+         2. BSI Engine (Transposed Storage): Deep dive into Bit-Sliced Indexes for Fidelity tracking.
+         3. Recall Logic (Scoring): Interactive radar for the multi-signal ranking algorithm.
+         4. Crate Blueprint: Technical breakdown of the Rust implementation (memory.rs, graph.rs, etc.).
+         5. API Reference: The operational contract for agent integration.
+         This approach ensures that an architect understands BOTH the 'why' (thermodynamics) and the 'how' (BSI bit-planes). -->
+    <!-- Visualization & Content Choices:
+         - Goal: Explain Fidelity Decay -> Viz: Chart.js Line Chart -> Interaction: State-toggle legends -> Justification: Clearly shows how Keystones resist the entropy curve.
+         - Goal: Visualize BSI Logic -> Viz: HTML Grid + Step-by-Step Simulation -> Interaction: Clickable logic steps -> Justification: Replicates the provided BSI logic for transparency in range-query resolution.
+         - Goal: Multi-Signal Scoring -> Viz: Radar Chart + Sliders -> Interaction: Real-time weight updates -> Justification: Intuitive way to show how agent intent reshapes retrieval.
+         - CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. All visual elements are Canvas or Tailwind-styled HTML. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'f-bg': '#f5f5f4',
+                        'f-surface': '#ffffff',
+                        'f-border': '#e7e5e4',
+                        'f-rust': '#b91c1c',
+                        'f-amber': '#d97706',
+                        'f-emerald': '#059669',
+                        'f-purple': '#7c3aed',
+                        'f-slate': '#475569',
+                        'f-text': '#1c1917',
+                        'f-muted': '#78716c'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f5f5f4; color: #1c1917; scroll-behavior: smooth; }
+
+        /* Chart Container Standards */
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin: auto;
+            height: 320px;
+        }
+
+        .nav-link {
+            transition: all 0.2s ease;
+            border-bottom: 2px solid transparent;
+        }
+        .nav-link.active {
+            color: #b91c1c;
+            border-bottom-color: #b91c1c;
+        }
+
+        .bsi-grid .cell {
+            background: #ffffff;
+            border: 1px solid #e7e5e4;
+            padding: 0.5rem;
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+        }
+        .bit-one { background: rgba(185, 28, 28, 0.05) !important; color: #b91c1c; font-weight: 700; }
+        .bit-zero { color: #d6d3d1; }
+
+        .step-active { border-left: 3px solid #b91c1c; background: #fafaf9; }
+
+        .bv {
+            width: 24px; height: 24px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+        }
+        .bv.one { background: rgba(185, 28, 28, 0.1); color: #b91c1c; font-weight: 700; }
+        .bv.zero { color: #d6d3d1; border: 1px solid #f5f5f4; }
+        .bv.res { background: #1c1917; color: #ffffff; }
+
+        /* Custom Range Slider */
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { height: 4px; background: #e7e5e4; border-radius: 2px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #b91c1c; cursor: pointer; margin-top: -6px; }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 4px; }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen font-sans">
+
+    <!-- Header -->
+    <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-f-border">
+        <div class="max-w-7xl mx-auto px-6 h-16 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-f-rust rounded shadow-sm flex items-center justify-center font-bold text-white italic">F</div>
+                <h1 class="text-xl font-black tracking-tighter text-f-text">FERRICULA</h1>
+            </div>
+            <nav class="hidden md:flex gap-8 text-[10px] font-bold uppercase tracking-[0.2em] text-f-muted">
+                <a href="#manifold" class="nav-link active pb-1">Manifold</a>
+                <a href="#identity" class="nav-link pb-1">Identity</a>
+                <a href="#bsi" class="nav-link pb-1">BSI Engine</a>
+                <a href="#recall" class="nav-link pb-1">Recall</a>
+                <a href="#crate" class="nav-link pb-1">Crate</a>
+                <a href="#api" class="nav-link pb-1">API</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="flex-grow">
+
+        <!-- SECTION 1: The Manifold (Hero & Decay) -->
+        <section id="manifold" class="max-w-7xl mx-auto px-6 py-20 scroll-mt-16">
+            <div class="flex flex-col lg:flex-row gap-16 items-center">
+                <div class="lg:w-5/12">
+                    <span class="text-f-rust font-mono text-xs font-bold mb-4 block tracking-widest uppercase">Thermodynamic State</span>
+                    <h2 class="text-5xl font-black text-f-text mb-6 leading-tight">
+                        Memory as <span class="text-f-rust italic">Entropy.</span>
+                    </h2>
+                    <p class="text-f-muted text-lg leading-relaxed mb-8">
+                        Ferricula models memory fidelity as an energy state. High-energy memories are **Active**, but as time passes and disuse grows, they decay naturally unless reinforced.
+                    </p>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="p-4 bg-white border border-f-border rounded-xl">
+                            <div class="text-[10px] font-bold text-f-muted uppercase mb-1">Base Decay ($\alpha$)</div>
+                            <div class="text-xl font-black text-f-rust">0.001 - 0.02</div>
+                        </div>
+                        <div class="p-4 bg-white border border-f-border rounded-xl">
+                            <div class="text-[10px] font-bold text-f-muted uppercase mb-1">Keystone Slots</div>
+                            <div class="text-xl font-black text-f-purple">Infinite</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="lg:w-7/12 w-full">
+                    <div class="bg-white p-6 rounded-2xl border border-f-border shadow-sm">
+                        <div class="chart-container">
+                            <canvas id="decayChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: Identity Casting -->
+        <section id="identity" class="bg-f-surface border-y border-f-border py-24 scroll-mt-16">
+            <div class="max-w-7xl mx-auto px-6">
+                <div class="mb-16">
+                    <span class="text-f-purple font-mono text-xs font-bold mb-4 block tracking-widest uppercase">Identity System</span>
+                    <h3 class="text-3xl font-black text-f-text mb-4">Cast from Entropy, Fixed Forever</h3>
+                    <p class="text-f-muted max-w-2xl leading-relaxed">
+                        Each ferricula instance casts a unique identity from radio entropy at first startup. A hexagram (I Ching, King Wen sequence) determines the agent's emotional profile, while the creation epoch sets its zodiac. Once cast, identity is immutable.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
+                    <!-- Hexagram -->
+                    <div class="bg-white p-8 rounded-2xl border border-f-border shadow-sm">
+                        <div class="text-[10px] font-bold text-f-purple uppercase mb-4 tracking-widest">Hexagram Casting</div>
+                        <div class="font-mono text-xs text-f-muted space-y-2 mb-6">
+                            <div>6 entropy bytes &rarr; 6 lines (yarrow stalk)</div>
+                            <div>Lines 0-2 &rarr; lower trigram</div>
+                            <div>Lines 3-5 &rarr; upper trigram</div>
+                            <div>King Wen[upper][lower] &rarr; hexagram 1-64</div>
+                        </div>
+                        <div class="bg-f-bg p-3 rounded-lg text-[10px] font-mono text-f-muted">
+                            <div class="text-f-text font-bold mb-1">Yarrow Stalk Probabilities</div>
+                            <div>Old Yin (6): &nbsp;1/16 = 6.25%</div>
+                            <div>Young Yang (7): 5/16 = 31.25%</div>
+                            <div>Young Yin (8): &nbsp;7/16 = 43.75%</div>
+                            <div>Old Yang (9): &nbsp;3/16 = 18.75%</div>
+                        </div>
+                    </div>
+
+                    <!-- Emotions -->
+                    <div class="bg-white p-8 rounded-2xl border border-f-border shadow-sm">
+                        <div class="text-[10px] font-bold text-f-amber uppercase mb-4 tracking-widest">Trigram Emotions</div>
+                        <div class="space-y-2 mb-6">
+                            <div class="flex justify-between text-xs"><span class="text-f-muted">Heaven</span><span class="font-bold text-f-text">Joy</span></div>
+                            <div class="flex justify-between text-xs"><span class="text-f-muted">Lake</span><span class="font-bold text-f-text">Sadness</span></div>
+                            <div class="flex justify-between text-xs"><span class="text-f-muted">Fire</span><span class="font-bold text-f-text">Anger</span></div>
+                            <div class="flex justify-between text-xs"><span class="text-f-muted">Thunder</span><span class="font-bold text-f-text">Surprise</span></div>
+                            <div class="flex justify-between text-xs"><span class="text-f-muted">Wind</span><span class="font-bold text-f-text">Interest</span></div>
+                            <div class="flex justify-between text-xs"><span class="text-f-muted">Water</span><span class="font-bold text-f-text">Fear</span></div>
+                            <div class="flex justify-between text-xs"><span class="text-f-muted">Mountain</span><span class="font-bold text-f-text">Boredom</span></div>
+                            <div class="flex justify-between text-xs"><span class="text-f-muted">Earth</span><span class="font-bold text-f-text">Trust</span></div>
+                        </div>
+                        <div class="bg-f-bg p-3 rounded-lg text-[10px] font-mono text-f-muted">
+                            Primary = upper trigram<br>Secondary = lower trigram
+                        </div>
+                    </div>
+
+                    <!-- Archetypes -->
+                    <div class="bg-white p-8 rounded-2xl border border-f-border shadow-sm">
+                        <div class="text-[10px] font-bold text-f-emerald uppercase mb-4 tracking-widest">Five Archetypes</div>
+                        <div class="space-y-3 mb-6">
+                            <div class="flex items-center gap-3">
+                                <div class="w-2 h-2 rounded-full bg-f-amber"></div>
+                                <span class="text-xs font-bold text-f-text flex-grow">Intuition</span>
+                                <span class="text-[10px] text-f-muted font-mono">&ge;0.25</span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <div class="w-2 h-2 rounded-full bg-f-amber"></div>
+                                <span class="text-xs font-bold text-f-text flex-grow">Fortune</span>
+                                <span class="text-[10px] text-f-muted font-mono">&ge;0.25</span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <div class="w-2 h-2 rounded-full bg-f-rust"></div>
+                                <span class="text-xs font-bold text-f-text flex-grow">Craft</span>
+                                <span class="text-[10px] text-f-muted font-mono">&ge;0.75</span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <div class="w-2 h-2 rounded-full bg-f-rust"></div>
+                                <span class="text-xs font-bold text-f-text flex-grow">Ethics</span>
+                                <span class="text-[10px] text-f-muted font-mono">&ge;0.75</span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <div class="w-2 h-2 rounded-full bg-f-rust"></div>
+                                <span class="text-xs font-bold text-f-text flex-grow">Advocate</span>
+                                <span class="text-[10px] text-f-muted font-mono">&ge;0.75</span>
+                            </div>
+                        </div>
+                        <div class="bg-f-bg p-3 rounded-lg text-[10px] font-mono text-f-muted">
+                            Dormant &rarr; Listening &rarr; Engaged &rarr; Reflecting<br>
+                            Activation tier driven by entropy intensity
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Architecture -->
+                <div class="bg-f-text text-white p-8 rounded-2xl shadow-lg">
+                    <div class="text-[10px] font-bold text-f-rust uppercase mb-4 tracking-widest">Three-Thread Architecture</div>
+                    <pre class="font-mono text-xs text-stone-400 leading-relaxed overflow-x-auto">gnosis-radio :9080          ferricula :8765              gnosis-chunk :8080
++--------------+     +--------------------------+     +--------------+
+| /api/time    |<----| clock thread (60s tick)   |     | /invert      |
+| /api/entropy |---->| entropy -> dream triggers |     | /health      |
++--------------+     +--------------------------+     +------+-------+
+                     | http thread (tiny_http)   |           |
+                     | 16 REST endpoints         |<----------+
+                     | channel-based dispatch    |  inversion check
+                     +--------------------------+
+                     | main thread               |
+                     | owns DurableEngine (mut)  |
+                     | owns IdentityState        |
+                     | drains clock + http rx    |
+                     +--------------------------+</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 2: BSI Engine (The Core Interaction) -->
+        <section id="bsi" class="bg-f-surface border-y border-f-border py-24 scroll-mt-16">
+            <div class="max-w-7xl mx-auto px-6">
+                <div class="mb-16">
+                    <h3 class="text-3xl font-black text-f-text mb-4">Bit-Sliced Index (BSI) Engine</h3>
+                    <p class="text-f-muted max-w-2xl leading-relaxed">
+                        To process mass decay across millions of memories, Ferricula transposes **Fidelity** into bit-planes. This allows constant-time range queries (e.g., *find all memories with fidelity > 5*) using pure Roaring Bitmap bitwise operations.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                    <!-- Step 1: Transposed Table -->
+                    <div>
+                        <div class="text-[10px] font-bold text-f-rust uppercase mb-4 tracking-widest flex items-center gap-2">
+                            01: Fidelity Bit-Planes <span class="h-[1px] flex-grow bg-f-border"></span>
+                        </div>
+                        <div class="bg-f-border rounded-lg overflow-hidden grid grid-cols-6 gap-[1px] bsi-grid shadow-sm">
+                            <div class="bg-f-bg p-3 font-bold text-f-muted">Mem ID</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-muted">Fid</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-purple">B3 (8)</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-emerald">B2 (4)</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-amber">B1 (2)</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-rust">B0 (1)</div>
+
+                            <div class="cell">m0</div><div class="cell font-bold">3</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-one">1</div>
+                            <div class="cell">m1</div><div class="cell font-bold">7</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-one">1</div><div class="cell bit-one">1</div>
+                            <div class="cell">m2</div><div class="cell font-bold">5</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div>
+                            <div class="cell">m3</div><div class="cell font-bold">12</div><div class="cell bit-one">1</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div>
+                            <div class="cell">m4</div><div class="cell font-bold">9</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div>
+                            <div class="cell">m5</div><div class="cell font-bold">2</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div>
+                        </div>
+                        <p class="mt-4 text-[10px] text-f-muted font-mono uppercase italic">Columns represent Roaring Bitmaps stored in the Rust memory layer.</p>
+                    </div>
+
+                    <!-- Step 2: Simulation Logic -->
+                    <div class="bg-f-bg border border-f-border rounded-2xl p-8 shadow-inner">
+                        <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest flex items-center gap-2">
+                            02: Range Resolution Simulation <span class="h-[1px] flex-grow bg-f-border"></span>
+                        </div>
+
+                        <div class="font-mono text-xs bg-white border border-f-border p-4 rounded-lg mb-8 shadow-sm">
+                            <span class="text-blue-600">QUERY</span> fidelity <span class="text-f-rust font-bold">> 5</span> (Binary: 0101)
+                        </div>
+
+                        <div class="space-y-6">
+                            <!-- Sim Step 1 -->
+                            <div class="flex gap-4 p-4 rounded-xl transition-all" id="sim-1">
+                                <div class="w-8 h-8 bg-white border border-f-border rounded-full flex items-center justify-center font-mono text-xs text-f-muted">1</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-2">Bit 3 (Threshold: 0)</h5>
+                                    <div class="flex items-center gap-4 text-[10px] font-mono mb-2">
+                                        <span class="w-16 text-right text-f-muted">Slice 3</span>
+                                        <div class="flex gap-1">
+                                            <div class="bv zero">0</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv one">1</div><div class="bv one">1</div><div class="bv zero">0</div>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-4 text-[10px] font-mono">
+                                        <span class="w-16 text-right text-f-rust font-bold">GT-Bit</span>
+                                        <div class="flex gap-1">
+                                            <div class="bv zero">0</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv res">1</div><div class="bv res">1</div><div class="bv zero">0</div>
+                                        </div>
+                                        <span class="text-f-muted text-[8px] uppercase">{m3, m4} definitely greater</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Sim Step 2 -->
+                            <div class="flex gap-4 p-4 rounded-xl transition-all" id="sim-2">
+                                <div class="w-8 h-8 bg-white border border-f-border rounded-full flex items-center justify-center font-mono text-xs text-f-muted">2</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-2">Bit 1 (Threshold: 0)</h5>
+                                    <div class="flex items-center gap-4 text-[10px] font-mono mb-2">
+                                        <span class="w-16 text-right text-f-muted">Slice 1</span>
+                                        <div class="flex gap-1">
+                                            <div class="bv one">1</div><div class="bv one">1</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv one">1</div>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-4 text-[10px] font-mono">
+                                        <span class="w-16 text-right text-f-rust font-bold">New GT</span>
+                                        <div class="flex gap-1">
+                                            <div class="bv zero">0</div><div class="bv res">1</div><div class="bv zero">0</div><div class="bv res">1</div><div class="bv res">1</div><div class="bv zero">0</div>
+                                        </div>
+                                        <span class="text-f-muted text-[8px] uppercase">Added m1 via EQ & Slice1</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-8 p-4 bg-f-text text-white rounded-lg shadow-lg">
+                            <div class="text-[10px] font-bold text-f-rust uppercase mb-1">Final Result Set</div>
+                            <div class="text-sm font-mono tracking-tight">{m1, m3, m4} &rarr; 5+ Fidelity</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: Recall Scoring -->
+        <section id="recall" class="max-w-7xl mx-auto px-6 py-24 scroll-mt-16">
+            <div class="text-center mb-16">
+                <h3 class="text-3xl font-black text-f-text">Recall Scoring Simulator</h3>
+                <p class="text-f-muted mt-4 max-w-2xl mx-auto">Retrieval is a synthesis of semantic relevance, bit-sliced fidelity, and graph connectivity. Adjust the weights to see how the ranking shifts.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center bg-white border border-f-border p-12 rounded-3xl shadow-sm">
+                <div class="space-y-8">
+                    <div class="flex flex-col gap-2">
+                        <div class="flex justify-between text-[10px] font-bold text-f-muted uppercase tracking-widest">
+                            <span>Semantic Relevance (w1)</span>
+                            <span id="v1" class="text-f-rust">0.4</span>
+                        </div>
+                        <input type="range" id="w1" min="0" max="1" step="0.1" value="0.4" oninput="updateRadar()">
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <div class="flex justify-between text-[10px] font-bold text-f-muted uppercase tracking-widest">
+                            <span>Thermodynamic Fidelity (w2)</span>
+                            <span id="v2" class="text-f-rust">0.2</span>
+                        </div>
+                        <input type="range" id="w2" min="0" max="1" step="0.1" value="0.2" oninput="updateRadar()">
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <div class="flex justify-between text-[10px] font-bold text-f-muted uppercase tracking-widest">
+                            <span>Graph Centrality (w3)</span>
+                            <span id="v3" class="text-f-rust">0.3</span>
+                        </div>
+                        <input type="range" id="w3" min="0" max="1" step="0.1" value="0.3" oninput="updateRadar()">
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <div class="flex justify-between text-[10px] font-bold text-f-muted uppercase tracking-widest">
+                            <span>Temporal Recency (w4)</span>
+                            <span id="v4" class="text-f-rust">0.1</span>
+                        </div>
+                        <input type="range" id="w4" min="0" max="1" step="0.1" value="0.1" oninput="updateRadar()">
+                    </div>
+
+                    <div class="bg-f-bg p-4 rounded-xl border border-f-border mt-8">
+                        <div class="text-[10px] font-bold text-f-text uppercase mb-2">Context Assembly Logic</div>
+                        <p class="text-xs text-f-muted leading-relaxed">The final recall bundle prioritizes: <br> Working Set &rarr; Keystones &rarr; High-Score Episodics &rarr; Consolidated Semantic Centroids.</p>
+                    </div>
+                </div>
+                <div class="flex justify-center">
+                    <div class="w-full max-w-sm">
+                        <canvas id="radarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 4: The Crate Modules -->
+        <section id="crate" class="bg-f-text py-24 scroll-mt-16 text-white">
+            <div class="max-w-7xl mx-auto px-6">
+                <div class="mb-16">
+                    <h3 class="text-3xl font-black mb-4 italic">The Rust Crate Blueprint</h3>
+                    <p class="text-stone-400 max-w-2xl leading-relaxed">Seventeen modules across three agent jurisdictions. Built on Roaring Bitmaps, tiny_http, and zero external HTTP clients.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                    <div class="bg-stone-800 p-6 rounded-2xl border border-stone-700">
+                        <div class="text-f-rust font-mono text-xs font-bold mb-3 uppercase tracking-widest">memory.rs</div>
+                        <h4 class="font-bold text-lg mb-4">Fidelity Envelope</h4>
+                        <p class="text-xs text-stone-400 leading-relaxed mb-6">Wraps raw data in thermodynamic metadata. Manages lifecycle transitions from Active to Archived.</p>
+                        <div class="bg-stone-900 p-2 text-[9px] font-mono text-stone-500 rounded">struct MemoryRecord { fidelity: f32, ... }</div>
+                    </div>
+                    <div class="bg-stone-800 p-6 rounded-2xl border border-stone-700">
+                        <div class="text-f-amber font-mono text-xs font-bold mb-3 uppercase tracking-widest">graph.rs</div>
+                        <h4 class="font-bold text-lg mb-4">Adjacency Map</h4>
+                        <p class="text-xs text-stone-400 leading-relaxed mb-6">Bidirectional edges with canonical keys. Bitmaps for neighbor lookup and 2-hop path searching.</p>
+                        <div class="bg-stone-900 p-2 text-[9px] font-mono text-stone-500 rounded">type EdgeMap = HashMap&lt;u32, Bitmap&gt;</div>
+                    </div>
+                    <div class="bg-stone-800 p-6 rounded-2xl border border-stone-700">
+                        <div class="text-f-emerald font-mono text-xs font-bold mb-3 uppercase tracking-widest">dream.rs</div>
+                        <h4 class="font-bold text-lg mb-4">Consolidation Loop</h4>
+                        <p class="text-xs text-stone-400 leading-relaxed mb-6">Six-phase dream: decay, forgive, consolidate, neglect, review, prune. Entropy-driven scheduling.</p>
+                        <div class="bg-stone-900 p-2 text-[9px] font-mono text-stone-500 rounded">fn dream_cycle(&mut self) -> DreamReport</div>
+                    </div>
+                    <div class="bg-stone-800 p-6 rounded-2xl border border-stone-700">
+                        <div class="text-f-purple font-mono text-xs font-bold mb-3 uppercase tracking-widest">casting.rs</div>
+                        <h4 class="font-bold text-lg mb-4">Hexagram Engine</h4>
+                        <p class="text-xs text-stone-400 leading-relaxed mb-6">King Wen 8x8 table, yarrow stalk probabilities, trigram-to-emotion mapping, zodiac from epoch.</p>
+                        <div class="bg-stone-900 p-2 text-[9px] font-mono text-stone-500 rounded">fn cast_hexagram(entropy: &[u8]) -> HexagramCast</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="bg-stone-800 p-6 rounded-2xl border border-stone-700">
+                        <div class="text-f-purple font-mono text-xs font-bold mb-3 uppercase tracking-widest">identity.rs</div>
+                        <h4 class="font-bold text-lg mb-4">Agent Identity</h4>
+                        <p class="text-xs text-stone-400 leading-relaxed mb-6">Load or create singleton identity from entropy. Persists as identity.json. Creates keystone anchor.</p>
+                        <div class="bg-stone-900 p-2 text-[9px] font-mono text-stone-500 rounded">fn load_or_create(dir, entropy) -> IdentityState</div>
+                    </div>
+                    <div class="bg-stone-800 p-6 rounded-2xl border border-stone-700">
+                        <div class="text-f-emerald font-mono text-xs font-bold mb-3 uppercase tracking-widest">http.rs</div>
+                        <h4 class="font-bold text-lg mb-4">HTTP Service</h4>
+                        <p class="text-xs text-stone-400 leading-relaxed mb-6">tiny_http thread with 16 endpoints. Channel-based dispatch to main thread via HttpCommand enum.</p>
+                        <div class="bg-stone-900 p-2 text-[9px] font-mono text-stone-500 rounded">fn spawn_http(port, tx, running) -> JoinHandle</div>
+                    </div>
+                    <div class="bg-stone-800 p-6 rounded-2xl border border-stone-700">
+                        <div class="text-f-amber font-mono text-xs font-bold mb-3 uppercase tracking-widest">clock.rs</div>
+                        <h4 class="font-bold text-lg mb-4">Entropy Clock</h4>
+                        <p class="text-xs text-stone-400 leading-relaxed mb-6">Polls gnosis-radio for time + entropy. Reservoir accumulation. Dream triggers at threshold.</p>
+                        <div class="bg-stone-900 p-2 text-[9px] font-mono text-stone-500 rounded">fn spawn_clock(config) -> (Receiver, Telemetry)</div>
+                    </div>
+                    <div class="bg-stone-800 p-6 rounded-2xl border border-stone-700">
+                        <div class="text-f-rust font-mono text-xs font-bold mb-3 uppercase tracking-widest">inversion.rs</div>
+                        <h4 class="font-bold text-lg mb-4">Semantic Fidelity</h4>
+                        <p class="text-xs text-stone-400 leading-relaxed mb-6">Vec2text quality check via chonk /invert. Jaccard word overlap measures if meaning survived decay.</p>
+                        <div class="bg-stone-900 p-2 text-[9px] font-mono text-stone-500 rounded">fn check_inversion(url, id, text, vec) -> Check</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 5: API Documentation -->
+        <section id="api" class="max-w-7xl mx-auto px-6 py-24 scroll-mt-16">
+            <div class="mb-16">
+                <h3 class="text-3xl font-black text-f-text mb-4">HTTP API Reference</h3>
+                <p class="text-f-muted max-w-2xl leading-relaxed">16 endpoints served on <code class="font-mono text-f-rust">--serve [port]</code> (default :8765). All responses are <code class="font-mono">application/json</code> with CORS headers.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- Memory Operations -->
+                <div>
+                    <div class="text-[10px] font-bold text-f-rust uppercase mb-4 tracking-widest">Memory Operations</div>
+                    <div class="space-y-3">
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-f-rust/10 text-f-rust font-mono text-[9px] font-bold rounded shrink-0">POST</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/remember</code>
+                                <p class="text-[10px] text-f-muted mt-1">Ingest Row + MemoryRecord. Body: <code>{"id", "tags", "vector", "emotion"?, "importance"?, "keystone"?}</code></p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-blue-100 text-blue-800 font-mono text-[9px] font-bold rounded shrink-0">POST</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/recall</code>
+                                <p class="text-[10px] text-f-muted mt-1">Search + update recall stats. Body: SQL or freeform query string.</p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-amber-100 text-amber-800 font-mono text-[9px] font-bold rounded shrink-0">POST</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/dream</code>
+                                <p class="text-[10px] text-f-muted mt-1">Run dream cycle: decay, forgive, consolidate, neglect, review, prune.</p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-mono text-[9px] font-bold rounded shrink-0">GET</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/status</code>
+                                <p class="text-[10px] text-f-muted mt-1">Memory counts (active/forgiven/archived), graph nodes/edges, prime tree stats.</p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-mono text-[9px] font-bold rounded shrink-0">GET</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/inspect/:id</code>
+                                <p class="text-[10px] text-f-muted mt-1">Full memory record: fidelity, alpha, state, emotion, provenance, graph degree.</p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-mono text-[9px] font-bold rounded shrink-0">GET</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/get/:id</code>
+                                <p class="text-[10px] text-f-muted mt-1">Raw row: id, tags, vector_dim.</p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-f-rust/10 text-f-rust font-mono text-[9px] font-bold rounded shrink-0">POST</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/keystone/:id</code>
+                                <p class="text-[10px] text-f-muted mt-1">Toggle keystone status (decay immunity).</p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-f-rust/10 text-f-rust font-mono text-[9px] font-bold rounded shrink-0">POST</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/offer</code>
+                                <p class="text-[10px] text-f-muted mt-1">Inject hex-encoded entropy, trigger dream at computed intensity.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Graph + System -->
+                <div>
+                    <div class="text-[10px] font-bold text-f-amber uppercase mb-4 tracking-widest">Graph Operations</div>
+                    <div class="space-y-3 mb-8">
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-f-rust/10 text-f-rust font-mono text-[9px] font-bold rounded shrink-0">POST</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/connect</code>
+                                <p class="text-[10px] text-f-muted mt-1">Create bidirectional edge. Body: <code>{"a": N, "b": N, "label": "..."}</code></p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-f-rust/10 text-f-rust font-mono text-[9px] font-bold rounded shrink-0">POST</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/disconnect</code>
+                                <p class="text-[10px] text-f-muted mt-1">Remove edge. Body: <code>{"a": N, "b": N}</code></p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-mono text-[9px] font-bold rounded shrink-0">GET</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/neighbors/:id</code>
+                                <p class="text-[10px] text-f-muted mt-1">List neighbors with edge labels, weights, and fidelity scores.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="text-[10px] font-bold text-f-purple uppercase mb-4 tracking-widest">System</div>
+                    <div class="space-y-3">
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-purple-100 text-purple-800 font-mono text-[9px] font-bold rounded shrink-0">GET</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/identity</code>
+                                <p class="text-[10px] text-f-muted mt-1">Full identity: agent_id, hexagram, horoscope, emotions, 5 archetypes.</p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-purple-100 text-purple-800 font-mono text-[9px] font-bold rounded shrink-0">GET</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/clock</code>
+                                <p class="text-[10px] text-f-muted mt-1">Clock telemetry: ticks, dreams, entropy lifetime, reservoir, radio status.</p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-purple-100 text-purple-800 font-mono text-[9px] font-bold rounded shrink-0">GET</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/terms</code>
+                                <p class="text-[10px] text-f-muted mt-1">Prime tree terms with member counts.</p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-purple-100 text-purple-800 font-mono text-[9px] font-bold rounded shrink-0">GET</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/inversion/:id</code>
+                                <p class="text-[10px] text-f-muted mt-1">Vec2text quality check. Requires chonk on :8080. Returns original, inverted, quality score.</p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-f-border p-4 rounded-xl flex items-start gap-4">
+                            <div class="px-2 py-0.5 bg-f-rust/10 text-f-rust font-mono text-[9px] font-bold rounded shrink-0">POST</div>
+                            <div class="flex-grow">
+                                <code class="text-xs font-mono font-bold">/checkpoint</code>
+                                <p class="text-[10px] text-f-muted mt-1">Flush WAL to V2 snapshot. Atomic write.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-f-bg border-t border-f-border py-12 px-6">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
+            <div class="flex items-center gap-2">
+                <div class="w-6 h-6 bg-f-rust rounded shadow-sm flex items-center justify-center font-bold text-white text-[10px]">F</div>
+                <span class="font-black text-f-text tracking-tight text-sm">FERRICULA v0.3.0</span>
+            </div>
+            <p class="text-[10px] font-mono text-f-muted uppercase tracking-widest">&copy; 2026 DeepBlue Dynamics &bull; Built with Rust &amp; RoaringBitmaps</p>
+        </div>
+    </footer>
+
+    <!-- Chart Logic -->
+    <script>
+        // 1. Decay Chart
+        const ctxDecay = document.getElementById('decayChart').getContext('2d');
+        const timeLabels = Array.from({length: 30}, (_, i) => `Cycle ${i}`);
+
+        const decayData = (alpha) => timeLabels.map((_, i) => Math.exp(-alpha * i));
+
+        const decayChart = new Chart(ctxDecay, {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [
+                    {
+                        label: 'Active Memory (Neglected)',
+                        data: decayData(0.04),
+                        borderColor: '#b91c1c',
+                        backgroundColor: 'rgba(185, 28, 28, 0.05)',
+                        fill: true,
+                        pointRadius: 0,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Keystone Anchor',
+                        data: timeLabels.map(() => 0.95),
+                        borderColor: '#7c3aed',
+                        borderDash: [5, 5],
+                        borderWidth: 2,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top', labels: { font: { weight: 'bold', size: 10 } } } },
+                scales: {
+                    y: { min: 0, max: 1.1, grid: { color: '#f5f5f4' }, title: { display: true, text: 'Fidelity' } },
+                    x: { ticks: { display: false }, grid: { display: false } }
+                }
+            }
+        });
+
+        // 2. Radar Chart
+        const ctxRadar = document.getElementById('radarChart').getContext('2d');
+        let radarChart = new Chart(ctxRadar, {
+            type: 'radar',
+            data: {
+                labels: ['Relevance', 'Fidelity', 'Centrality', 'Recency'],
+                datasets: [{
+                    label: 'Weight Manifold',
+                    data: [0.4, 0.2, 0.3, 0.1],
+                    backgroundColor: 'rgba(185, 28, 28, 0.1)',
+                    borderColor: '#b91c1c',
+                    pointBackgroundColor: '#b91c1c',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        min: 0, max: 1, ticks: { display: false },
+                        grid: { color: '#e7e5e4' },
+                        angleLines: { color: '#e7e5e4' },
+                        pointLabels: { font: { weight: 'bold', size: 10, family: 'Inter' } }
+                    }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        // Interactive update
+        window.updateRadar = function() {
+            const w1 = parseFloat(document.getElementById('w1').value);
+            const w2 = parseFloat(document.getElementById('w2').value);
+            const w3 = parseFloat(document.getElementById('w3').value);
+            const w4 = parseFloat(document.getElementById('w4').value);
+
+            document.getElementById('v1').innerText = w1.toFixed(1);
+            document.getElementById('v2').innerText = w2.toFixed(1);
+            document.getElementById('v3').innerText = w3.toFixed(1);
+            document.getElementById('v4').innerText = w4.toFixed(1);
+
+            radarChart.data.datasets[0].data = [w1, w2, w3, w4];
+            radarChart.update();
+        };
+
+        // Scroll listener for nav
+        window.addEventListener('scroll', () => {
+            const sections = document.querySelectorAll('section');
+            const navLinks = document.querySelectorAll('.nav-link');
+            let current = "";
+            sections.forEach(s => {
+                if (pageYOffset >= s.offsetTop - 100) { current = s.getAttribute('id'); }
+            });
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href').includes(current)) { link.classList.add('active'); }
+            });
+        });
+
+        // Sim highlighting logic (visual only)
+        let step = 1;
+        setInterval(() => {
+            document.querySelectorAll('[id^="sim-"]').forEach(s => s.classList.remove('step-active'));
+            document.getElementById(`sim-${step}`).classList.add('step-active');
+            step = step === 1 ? 2 : 1;
+        }, 3000);
+
+    </script>
+</body>
+</html>

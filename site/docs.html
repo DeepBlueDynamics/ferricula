@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ferricula | Documentation</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐛</text></svg>">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'f-bg': '#f5f5f4',
+                        'f-surface': '#ffffff',
+                        'f-border': '#e7e5e4',
+                        'f-rust': '#b91c1c',
+                        'f-amber': '#d97706',
+                        'f-emerald': '#059669',
+                        'f-purple': '#7c3aed',
+                        'f-slate': '#475569',
+                        'f-text': '#1c1917',
+                        'f-muted': '#78716c'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f5f5f4; color: #1c1917; scroll-behavior: smooth; }
+        .nav-link {
+            transition: all 0.2s ease;
+            border-bottom: 2px solid transparent;
+        }
+        .nav-link.active {
+            color: #b91c1c;
+            border-bottom-color: #b91c1c;
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 4px; }
+
+        .lifecycle-node {
+            transition: all 0.3s ease;
+        }
+        .lifecycle-node:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        .lifecycle-arrow {
+            width: 2px;
+            height: 24px;
+            background: #e7e5e4;
+            margin: 0 auto;
+        }
+        .lifecycle-arrow-horiz {
+            width: 24px;
+            height: 2px;
+            background: #e7e5e4;
+        }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen font-sans">
+
+    <!-- Header -->
+    <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-f-border">
+        <div class="max-w-7xl mx-auto px-6 h-16 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <a href="index.html" class="flex items-center gap-3">
+                    <div class="w-8 h-8 bg-f-rust rounded shadow-sm flex items-center justify-center font-bold text-white italic">F</div>
+                    <h1 class="text-xl font-black tracking-tighter text-f-text">FERRICULA</h1>
+                </a>
+            </div>
+            <nav class="hidden md:flex gap-8 text-[10px] font-bold uppercase tracking-[0.2em] text-f-muted">
+                <a href="#lifecycle" class="nav-link active pb-1">Lifecycle</a>
+                <a href="#agents" class="nav-link pb-1">Agents</a>
+                <a href="#tools" class="nav-link pb-1">Tools</a>
+                <a href="#config" class="nav-link pb-1">Configuration</a>
+                <a href="#faq" class="nav-link pb-1">Q&amp;A</a>
+                <a href="index.html" class="nav-link pb-1">Architecture</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="flex-grow">
+
+        <!-- Hero -->
+        <section class="max-w-7xl mx-auto px-6 py-16 scroll-mt-16">
+            <span class="text-f-rust font-mono text-xs font-bold mb-4 block tracking-widest uppercase">Documentation</span>
+            <h2 class="text-4xl font-black text-f-text mb-4 leading-tight">
+                How Memory <span class="text-f-rust italic">Lives.</span>
+            </h2>
+            <p class="text-f-muted text-lg max-w-2xl leading-relaxed mb-8">
+                Ferricula is a memory engine for AI agents. Text goes in, gets embedded into vectors, wrapped in a thermodynamic envelope, and placed on a manifold where it decays unless reinforced. This page explains the full processing lifecycle, the agents that manage it, and how to configure it.
+            </p>
+
+            <div class="bg-white border border-f-border rounded-2xl p-6 max-w-2xl">
+                <div class="text-[10px] font-bold text-f-rust uppercase mb-4 tracking-widest">Required Services</div>
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between p-3 bg-f-bg rounded-lg border border-f-border">
+                        <div>
+                            <a href="https://radio.nuts.services" target="_blank" class="text-sm font-bold text-f-text hover:text-f-rust transition-colors">gnosis-radio</a>
+                            <p class="text-[10px] text-f-muted mt-0.5">SDR entropy source. Marine VHF monitor that harvests FM noise as entropy for dream cycles and identity casting.</p>
+                        </div>
+                        <div class="text-right shrink-0 ml-4">
+                            <div class="text-sm font-black text-f-emerald font-mono">$19.95</div>
+                            <div class="text-[8px] text-f-muted">one-time license</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between p-3 bg-f-bg rounded-lg border border-f-border">
+                        <div>
+                            <span class="text-sm font-bold text-f-text">gnosis-chunk</span>
+                            <p class="text-[10px] text-f-muted mt-0.5">Embedding service. Converts text to 768d vectors (gtr-t5-base) and inverts vectors back to text (vec2text). Required for remember, recall, reflect, and observe.</p>
+                        </div>
+                        <div class="text-right shrink-0 ml-4">
+                            <div class="text-sm font-black text-f-muted font-mono">required</div>
+                            <div class="text-[8px] text-f-muted">separate container</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: Memory Lifecycle -->
+        <section id="lifecycle" class="bg-f-surface border-y border-f-border py-24 scroll-mt-16">
+            <div class="max-w-7xl mx-auto px-6">
+                <div class="mb-16">
+                    <h3 class="text-3xl font-black text-f-text mb-4">Memory Lifecycle</h3>
+                    <p class="text-f-muted max-w-3xl leading-relaxed">
+                        Every memory follows a one-way path. It enters as Active, decays over time, gets forgiven when text is no longer recoverable, and eventually archives. At each stage, different operations are available. The lifecycle is irreversible &mdash; there are no undo buttons, only new memories created from old seeds.
+                    </p>
+                </div>
+
+                <!-- Lifecycle Diagram -->
+                <div class="bg-white border border-f-border p-8 rounded-2xl mb-12">
+                    <div class="text-[10px] font-bold text-f-rust uppercase mb-8 tracking-widest flex items-center gap-2">
+                        Processing Flow <span class="h-[1px] flex-grow bg-f-border"></span>
+                    </div>
+
+                    <!-- Ingest -->
+                    <div class="max-w-3xl mx-auto">
+                        <div class="lifecycle-node bg-f-bg border-2 border-f-emerald rounded-2xl p-6 mb-2">
+                            <div class="flex items-center gap-4">
+                                <div class="w-12 h-12 bg-f-emerald/10 text-f-emerald rounded-full flex items-center justify-center font-mono text-sm font-bold shrink-0">IN</div>
+                                <div class="flex-grow">
+                                    <h4 class="text-sm font-bold text-f-text mb-1">Ingest</h4>
+                                    <p class="text-[11px] text-f-muted leading-relaxed">Text arrives via <code>remember</code>, <code>reflect</code>, or <code>observe</code>. The text is sent to the embedding service (chonk) which returns a 768-dimensional vector. The vector and a truncated text tag are stored together. A thermodynamic envelope wraps the raw data: fidelity starts at 1.0, decay alpha is set by the sensory channel, and the memory enters the Active state.</p>
+                                </div>
+                            </div>
+                            <div class="mt-4 grid grid-cols-3 gap-3">
+                                <div class="bg-white p-3 rounded-lg border border-f-border">
+                                    <div class="text-[9px] font-bold text-f-muted uppercase">Hearing</div>
+                                    <div class="text-xs font-mono text-f-text">&alpha; = 0.010</div>
+                                    <div class="text-[8px] text-f-muted">External input</div>
+                                </div>
+                                <div class="bg-white p-3 rounded-lg border border-f-border">
+                                    <div class="text-[9px] font-bold text-f-muted uppercase">Seeing</div>
+                                    <div class="text-xs font-mono text-f-text">&alpha; = 0.010</div>
+                                    <div class="text-[8px] text-f-muted">Keystoned by default</div>
+                                </div>
+                                <div class="bg-white p-3 rounded-lg border border-f-border">
+                                    <div class="text-[9px] font-bold text-f-muted uppercase">Thinking</div>
+                                    <div class="text-xs font-mono text-f-text">&alpha; = 0.015</div>
+                                    <div class="text-[8px] text-f-muted">Faster decay</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="lifecycle-arrow"></div>
+
+                        <!-- Active -->
+                        <div class="lifecycle-node bg-f-bg border-2 border-f-rust rounded-2xl p-6 mb-2">
+                            <div class="flex items-center gap-4">
+                                <div class="w-12 h-12 bg-f-rust/10 text-f-rust rounded-full flex items-center justify-center font-mono text-sm font-bold shrink-0">ACT</div>
+                                <div class="flex-grow">
+                                    <h4 class="text-sm font-bold text-f-text mb-1">Active</h4>
+                                    <p class="text-[11px] text-f-muted leading-relaxed">Full text and vector available. Searchable by cosine similarity and tag match. Fidelity decays each dream cycle: <code>f(t) = f(t-1) &times; exp(-&alpha;)</code>. Recall resets the staleness clock and shrinks alpha by 5% &mdash; used memories decay slower. Neglected memories have alpha grow by 0.5% per cycle. Keystones are immune to decay entirely.</p>
+                                </div>
+                            </div>
+                            <div class="mt-4 flex gap-3">
+                                <div class="bg-white px-3 py-2 rounded-lg border border-f-border text-[10px]">
+                                    <span class="font-bold text-f-emerald">Recall</span> &rarr; shrinks &alpha;, resets staleness
+                                </div>
+                                <div class="bg-white px-3 py-2 rounded-lg border border-f-border text-[10px]">
+                                    <span class="font-bold text-f-amber">Neglect</span> &rarr; grows &alpha;
+                                </div>
+                                <div class="bg-white px-3 py-2 rounded-lg border border-f-border text-[10px]">
+                                    <span class="font-bold text-f-purple">Keystone</span> &rarr; immune to decay
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="lifecycle-arrow"></div>
+
+                        <!-- Dream -->
+                        <div class="lifecycle-node bg-f-text text-white rounded-2xl p-6 mb-2">
+                            <div class="flex items-center gap-4">
+                                <div class="w-12 h-12 bg-white/10 text-white rounded-full flex items-center justify-center font-mono text-sm font-bold shrink-0 border border-white/20">DRM</div>
+                                <div class="flex-grow">
+                                    <h4 class="text-sm font-bold text-white mb-1">Dream Cycle</h4>
+                                    <p class="text-[11px] text-stone-400 leading-relaxed">Triggered by entropy accumulation. Six phases in sequence: <strong class="text-stone-300">Decay</strong> ticks fidelity down. <strong class="text-stone-300">Forgive</strong> transitions memories below the 0.75 fidelity gate. <strong class="text-stone-300">Consolidate</strong> merges similar memories into fidelity-weighted centroids. <strong class="text-stone-300">Neglect</strong> grows alpha on stale memories. <strong class="text-stone-300">Review</strong> checks keystones for relevance. <strong class="text-stone-300">Prune</strong> removes archived husks.</p>
+                                </div>
+                            </div>
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                <span class="px-2 py-1 bg-white/10 rounded text-[9px] font-mono">1. decay_tick</span>
+                                <span class="px-2 py-1 bg-white/10 rounded text-[9px] font-mono">2. forgive</span>
+                                <span class="px-2 py-1 bg-white/10 rounded text-[9px] font-mono">3. consolidate</span>
+                                <span class="px-2 py-1 bg-white/10 rounded text-[9px] font-mono">4. neglect</span>
+                                <span class="px-2 py-1 bg-white/10 rounded text-[9px] font-mono">5. review</span>
+                                <span class="px-2 py-1 bg-white/10 rounded text-[9px] font-mono">6. prune</span>
+                            </div>
+                        </div>
+
+                        <div class="lifecycle-arrow"></div>
+
+                        <!-- Forgiven -->
+                        <div class="lifecycle-node bg-f-bg border-2 border-f-amber rounded-2xl p-6 mb-2">
+                            <div class="flex items-center gap-4">
+                                <div class="w-12 h-12 bg-f-amber/10 text-f-amber rounded-full flex items-center justify-center font-mono text-sm font-bold shrink-0">FGV</div>
+                                <div class="flex-grow">
+                                    <h4 class="text-sm font-bold text-f-text mb-1">Forgiven</h4>
+                                    <p class="text-[11px] text-f-muted leading-relaxed">Fidelity dropped below 0.75. The text is discarded &mdash; the original words are gone. But the vector seed survives. The inversion pipeline (vec2text) can reconstruct an approximation of what the memory said. The memory is no longer searched by default. It exists as a ghost &mdash; a direction in embedding space without words.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="lifecycle-arrow"></div>
+
+                        <!-- Archived -->
+                        <div class="lifecycle-node bg-f-bg border-2 border-f-slate rounded-2xl p-6 mb-2">
+                            <div class="flex items-center gap-4">
+                                <div class="w-12 h-12 bg-f-slate/10 text-f-slate rounded-full flex items-center justify-center font-mono text-sm font-bold shrink-0">ARC</div>
+                                <div class="flex-grow">
+                                    <h4 class="text-sm font-bold text-f-text mb-1">Archived</h4>
+                                    <p class="text-[11px] text-f-muted leading-relaxed">Cold storage. The vector still exists but the memory is dormant. Can be revived &mdash; but revival creates a <em>new</em> Active memory from the archived seed. The original is never resurrected. This preserves the one-way thermodynamic guarantee: entropy only increases.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="lifecycle-arrow"></div>
+
+                        <!-- Pruned -->
+                        <div class="lifecycle-node bg-f-bg border-2 border-stone-300 rounded-2xl p-6">
+                            <div class="flex items-center gap-4">
+                                <div class="w-12 h-12 bg-stone-100 text-stone-400 rounded-full flex items-center justify-center font-mono text-sm font-bold shrink-0">DEL</div>
+                                <div class="flex-grow">
+                                    <h4 class="text-sm font-bold text-f-text mb-1">Pruned</h4>
+                                    <p class="text-[11px] text-f-muted leading-relaxed">Gone. The row is deleted from the engine. The bitmap entry is cleared. The graph edges are removed. The prime tree term memberships are cleaned up. Nothing survives. This is the thermodynamic floor.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Consolidation & Adaptive Decay — Terminal Style -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="bg-[#0a0a0a] border border-[#1a3a1a] p-8 rounded-2xl shadow-lg">
+                        <div class="text-[10px] font-bold text-[#33ff33] uppercase mb-4 tracking-widest font-mono">// Consolidation</div>
+                        <p class="text-sm text-[#88cc88] leading-relaxed mb-6 font-mono">
+                            During dreams, similar active memories are clustered by cosine similarity. Groups of 3+ above the similarity threshold merge into a single memory at the fidelity-weighted centroid. The consolidated memory inherits the highest fidelity, records its source IDs in provenance metadata, and increments its consolidation depth. Deeper consolidation reduces the effective decay rate &mdash; importance emerges from survival.
+                        </p>
+                        <div class="bg-[#050505] p-5 rounded-lg border border-[#1a3a1a] font-mono text-base text-[#33ff33] leading-loose">
+                            centroid = &sum;(v<sub>i</sub> &times; fidelity<sub>i</sub>) / &sum;(fidelity<sub>i</sub>)<br>
+                            effective_&alpha; = base_&alpha; / (1 + log(depth))
+                        </div>
+                    </div>
+
+                    <div class="bg-[#0a0a0a] border border-[#1a3a1a] p-8 rounded-2xl shadow-lg">
+                        <div class="text-[10px] font-bold text-[#33ff33] uppercase mb-4 tracking-widest font-mono">// Adaptive Decay</div>
+                        <p class="text-sm text-[#88cc88] leading-relaxed mb-6 font-mono">
+                            The decay rate is not fixed. It adapts to how the memory is used. Recall shrinks alpha by 5% (memory becomes more durable). Neglect grows alpha by 0.5% per cycle (memory fades faster). Consolidation depth provides a logarithmic floor. The bounds are hard: minimum 0.001, maximum 0.02. A memory that is recalled frequently and consolidated deeply approaches immortality without being keystoned.
+                        </p>
+                        <div class="bg-[#050505] p-5 rounded-lg border border-[#1a3a1a] font-mono text-base text-[#33ff33] leading-loose">
+                            on_recall:&nbsp; &alpha; &times;= 0.95<br>
+                            on_neglect: &alpha; &times;= 1.005<br>
+                            bounds:&nbsp;&nbsp;&nbsp; 0.001 &le; &alpha; &le; 0.02
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: Agents -->
+        <section id="agents" class="max-w-7xl mx-auto px-6 py-24 scroll-mt-16">
+            <div class="mb-16">
+                <h3 class="text-3xl font-black text-f-text mb-4">Agents</h3>
+                <p class="text-f-muted max-w-3xl leading-relaxed">
+                    At creation, ferricula casts an I Ching hexagram from entropy bytes. That hexagram seeds an identity: emotion profile, zodiac sign, ECC keypair, and five archetype sub-agents. Each archetype has its own hexagram, its own emotional signature, and a distinct role in memory management. They activate based on entropy intensity &mdash; low entropy wakes fewer agents.
+                </p>
+            </div>
+
+            <!-- Activation Tiers -->
+            <div class="bg-white border border-f-border p-8 rounded-2xl mb-8">
+                <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest flex items-center gap-2">
+                    Entropy-Gated Activation <span class="h-[1px] flex-grow bg-f-border"></span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="bg-f-bg p-6 rounded-xl border border-f-border">
+                        <div class="flex items-center gap-2 mb-3">
+                            <div class="w-3 h-3 rounded-full bg-stone-300"></div>
+                            <span class="text-xs font-bold text-f-text uppercase">Minimal (&lt; 0.25)</span>
+                        </div>
+                        <p class="text-[11px] text-f-muted leading-relaxed mb-3">Decay only. No archetype activation. The thermodynamic minimum &mdash; memories still lose fidelity but no agents intervene. This is the engine in sleep mode.</p>
+                        <div class="text-[9px] font-mono text-f-muted">Active agents: none</div>
+                    </div>
+                    <div class="bg-f-bg p-6 rounded-xl border border-f-border">
+                        <div class="flex items-center gap-2 mb-3">
+                            <div class="w-3 h-3 rounded-full bg-f-amber"></div>
+                            <span class="text-xs font-bold text-f-text uppercase">Moderate (0.25&ndash;0.75)</span>
+                        </div>
+                        <p class="text-[11px] text-f-muted leading-relaxed mb-3">Decay plus two archetypes. Intuition suggests connections. Fortune evaluates timing. The engine is dreaming lightly &mdash; making associations but not restructuring.</p>
+                        <div class="text-[9px] font-mono text-f-text font-bold">Active: Intuition, Fortune</div>
+                    </div>
+                    <div class="bg-f-bg p-6 rounded-xl border border-f-border">
+                        <div class="flex items-center gap-2 mb-3">
+                            <div class="w-3 h-3 rounded-full bg-f-emerald"></div>
+                            <span class="text-xs font-bold text-f-text uppercase">Full (&ge; 0.75)</span>
+                        </div>
+                        <p class="text-[11px] text-f-muted leading-relaxed mb-3">All five archetypes active. Full dream cycle with consolidation, graph pruning, and keystone review. The engine is fully conscious &mdash; restructuring memory architecture.</p>
+                        <div class="text-[9px] font-mono text-f-text font-bold">Active: all five</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Five Archetypes -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="bg-white border border-f-border p-6 rounded-2xl">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 bg-f-purple/10 text-f-purple rounded-full flex items-center justify-center font-bold text-sm">I</div>
+                        <div>
+                            <h4 class="text-sm font-bold text-f-text">Intuition</h4>
+                            <div class="text-[9px] font-mono text-f-muted">pattern recognition</div>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-f-muted leading-relaxed">Identifies latent connections between memories. Suggests graph edges based on semantic proximity and temporal co-occurrence. Wakes at moderate entropy &mdash; the first voice in a light dream.</p>
+                    <div class="mt-3 text-[9px] font-mono text-f-muted">State machine: Dormant &rarr; Listening &rarr; Engaged &rarr; Reflecting</div>
+                </div>
+
+                <div class="bg-white border border-f-border p-6 rounded-2xl">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 bg-f-amber/10 text-f-amber rounded-full flex items-center justify-center font-bold text-sm">F</div>
+                        <div>
+                            <h4 class="text-sm font-bold text-f-text">Fortune</h4>
+                            <div class="text-[9px] font-mono text-f-muted">timing &amp; opportunity</div>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-f-muted leading-relaxed">Evaluates whether a memory should be reinforced or released based on context timing. Considers staleness, recall frequency, and the current entropy state. Second to wake after Intuition.</p>
+                    <div class="mt-3 text-[9px] font-mono text-f-muted">State machine: Dormant &rarr; Listening &rarr; Engaged &rarr; Reflecting</div>
+                </div>
+
+                <div class="bg-white border border-f-border p-6 rounded-2xl">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 bg-f-emerald/10 text-f-emerald rounded-full flex items-center justify-center font-bold text-sm">C</div>
+                        <div>
+                            <h4 class="text-sm font-bold text-f-text">Craft</h4>
+                            <div class="text-[9px] font-mono text-f-muted">structural maintenance</div>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-f-muted leading-relaxed">Manages the physical structure of the memory store. Drives consolidation &mdash; merging similar memories into stronger composites. Handles term index maintenance and graph edge weights. Only active at full entropy.</p>
+                    <div class="mt-3 text-[9px] font-mono text-f-muted">State machine: Dormant &rarr; Listening &rarr; Engaged &rarr; Reflecting</div>
+                </div>
+
+                <div class="bg-white border border-f-border p-6 rounded-2xl">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 bg-f-rust/10 text-f-rust rounded-full flex items-center justify-center font-bold text-sm">E</div>
+                        <div>
+                            <h4 class="text-sm font-bold text-f-text">Ethics</h4>
+                            <div class="text-[9px] font-mono text-f-muted">boundary enforcement</div>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-f-muted leading-relaxed">Guards the lifecycle rules. Ensures one-way state transitions. Reviews keystones for relevance &mdash; nothing is immortal without justification. Prevents memory hoarding and enforces the fidelity gate. Only active at full entropy.</p>
+                    <div class="mt-3 text-[9px] font-mono text-f-muted">State machine: Dormant &rarr; Listening &rarr; Engaged &rarr; Reflecting</div>
+                </div>
+
+                <div class="bg-white border border-f-border p-6 rounded-2xl">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 bg-f-slate/10 text-f-slate rounded-full flex items-center justify-center font-bold text-sm">A</div>
+                        <div>
+                            <h4 class="text-sm font-bold text-f-text">Advocate</h4>
+                            <div class="text-[9px] font-mono text-f-muted">external interface</div>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-f-muted leading-relaxed">Manages the offering protocol &mdash; sharing memories between agents. Handles encryption transforms for inter-agent transfer. Decides what to share and what to keep private. Only active at full entropy.</p>
+                    <div class="mt-3 text-[9px] font-mono text-f-muted">State machine: Dormant &rarr; Listening &rarr; Engaged &rarr; Reflecting</div>
+                </div>
+
+                <!-- Identity Cast -->
+                <div class="bg-f-text text-white p-6 rounded-2xl">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center font-bold text-sm border border-white/20">ID</div>
+                        <div>
+                            <h4 class="text-sm font-bold text-white">Identity Cast</h4>
+                            <div class="text-[9px] font-mono text-stone-400">hexagram &rarr; archetypes</div>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-stone-400 leading-relaxed">Each archetype gets 6 entropy bytes offset by its role index. Those bytes cast a hexagram via yarrow stalk probabilities. The hexagram's upper and lower trigrams map to primary and secondary emotions. The horoscope is derived from the creation epoch. Every agent instance is unique.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: Tools -->
+        <section id="tools" class="bg-f-surface border-y border-f-border py-24 scroll-mt-16">
+            <div class="max-w-7xl mx-auto px-6">
+                <div class="mb-16">
+                    <h3 class="text-3xl font-black text-f-text mb-4">Tools</h3>
+                    <p class="text-f-muted max-w-3xl leading-relaxed">
+                        Ferricula exposes two tool surfaces via MCP (Model Context Protocol). The <strong>cognitive surface</strong> is what your LLM agent uses &mdash; remember, recall, reflect, observe. The <strong>system surface</strong> is for internal operations &mdash; dream cycles, keystone management, raw queries. You control which surface is exposed via the <code>FERRICULA_SURFACE</code> environment variable.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <!-- Cognitive Tools -->
+                    <div class="bg-white border border-f-border p-8 rounded-2xl">
+                        <div class="flex items-center gap-3 mb-6">
+                            <div class="px-3 py-1 bg-f-emerald/10 text-f-emerald text-[10px] font-bold rounded uppercase">Cognitive Surface</div>
+                            <span class="text-[10px] font-mono text-f-muted">FERRICULA_SURFACE=cognitive</span>
+                        </div>
+                        <p class="text-xs text-f-muted leading-relaxed mb-6">What the LLM agent sees. Ten tools for thinking, remembering, and introspecting. No system access. No raw queries. The agent thinks, it doesn't administrate.</p>
+
+                        <div class="space-y-3">
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">remember</span>
+                                    <span class="text-[9px] text-f-muted">text, channel, emotion, importance, keystone</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Store a memory. Text is embedded automatically via chonk. Vectors are never exposed to the LLM.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">recall</span>
+                                    <span class="text-[9px] text-f-muted">query</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Search memories by text. Returns reconstructed text with fidelity, emotion, and channel. Each recalled memory gets strengthened.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">reflect</span>
+                                    <span class="text-[9px] text-f-muted">thought, importance</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Working memory with faster decay (&alpha;=0.015). Thoughts are transient unless reinforced by recall.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">observe</span>
+                                    <span class="text-[9px] text-f-muted">path, summary</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">File observation. Always keystoned &mdash; immune to decay. Reference material that persists.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">inspect</span>
+                                    <span class="text-[9px] text-f-muted">id</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">View a memory's text, fidelity, emotion, decay rate, and graph neighbors. Never shows raw vectors.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">connect</span>
+                                    <span class="text-[9px] text-f-muted">a, b, label</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Create a labeled graph edge between two memories (caused, related, contradicts, etc.).</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">neighbors</span>
+                                    <span class="text-[9px] text-f-muted">id</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Browse graph connections for a memory. Shows edge labels, weights, and neighbor fidelity.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">status</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Aggregate stats: row count, active/forgiven/archived counts, graph size, term count.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">health</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Check if ferricula and chonk (embedding service) are reachable and functioning.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">identity</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">The agent's identity: hexagram, zodiac, emotions, and all five archetypes.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- System Tools -->
+                    <div class="bg-white border border-f-border p-8 rounded-2xl">
+                        <div class="flex items-center gap-3 mb-6">
+                            <div class="px-3 py-1 bg-f-rust/10 text-f-rust text-[10px] font-bold rounded uppercase">System Surface</div>
+                            <span class="text-[10px] font-mono text-f-muted">FERRICULA_SURFACE=system</span>
+                        </div>
+                        <p class="text-xs text-f-muted leading-relaxed mb-6">Internal operations. What the archetypes and system clock use. Dream cycles, checkpoints, raw SQL, entropy injection. Not exposed to the LLM by default.</p>
+
+                        <div class="space-y-3">
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">dream</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Run a full dream cycle: decay, forgive, consolidate, neglect, review, prune. Returns a report.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">keystone</span>
+                                    <span class="text-[9px] text-f-muted">id</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Toggle decay immunity on a memory. Keystones never lose fidelity.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">checkpoint</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Flush the write-ahead log to a V2 snapshot. Durability guarantee.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">offer_entropy</span>
+                                    <span class="text-[9px] text-f-muted">source</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Inject entropy from radio or hex string. Triggers a dream cycle scaled by entropy volume.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">inversion_check</span>
+                                    <span class="text-[9px] text-f-muted">id</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Semantic fidelity audit. Inverts a memory's vector via vec2text and compares with original text.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">terms</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">List all terms in the prime tree with member counts.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">query</span>
+                                    <span class="text-[9px] text-f-muted">sql</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Raw SQL against the store. SELECT, WHERE, AND/OR, UNION/INTERSECT/EXCEPT, vector_topk_cosine.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">disconnect</span>
+                                    <span class="text-[9px] text-f-muted">a, b</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Remove a graph edge between two memories.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">clock</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Clock telemetry: ticks, dreams, entropy lifetime, reservoir status, radio connection.</p>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 p-4 bg-f-text text-white rounded-lg">
+                            <div class="text-[10px] font-bold text-f-rust uppercase mb-1">All Tools</div>
+                            <div class="text-[10px] text-stone-400">
+                                <code>FERRICULA_SURFACE=all</code> (default) registers both surfaces. Use this for development and operator access. 19 tools total.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: Configuration -->
+        <section id="config" class="max-w-7xl mx-auto px-6 py-24 scroll-mt-16">
+            <div class="mb-16">
+                <h3 class="text-3xl font-black text-f-text mb-4">Configuration</h3>
+                <p class="text-f-muted max-w-3xl leading-relaxed">
+                    Ferricula runs as a Docker container. Configuration is via environment variables, either passed at runtime or loaded from a <code>.env</code> file in the container's working directory.
+                </p>
+            </div>
+
+            <!-- Claude Code Auto-Setup -->
+            <div class="bg-f-text rounded-2xl p-8 mb-12">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center text-white font-bold text-sm border border-white/20">CC</div>
+                    <div>
+                        <h4 class="text-sm font-bold text-white">Claude Code Auto-Setup</h4>
+                        <p class="text-[10px] text-stone-400">Paste this prompt into Claude Code. It will install ferricula, download the MCP tools, and register them.</p>
+                    </div>
+                </div>
+                <div class="bg-stone-900 p-5 rounded-xl font-mono text-[11px] text-stone-300 leading-relaxed overflow-x-auto" id="prompt-block">Install ferricula as an MCP memory server. Steps:<br>
+1. Check that Docker is installed (`docker --version`). If not, tell me to install Docker first.<br>
+2. Pull and start ferricula: `docker run -d --name ferricula -p 8765:8765 -v ferricula-data:/data gcr.io/gnosis-459403/ferricula`<br>
+3. Verify it's running: `curl -s http://localhost:8765/status`<br>
+4. Download the MCP tool: `curl -sL https://ferricula.nuts.services/tools/ferricula-mcp.py -o tools/ferricula-mcp.py`<br>
+5. Install the MCP Python dependency: `pip install mcp`<br>
+6. Register in .mcp.json with FERRICULA_SURFACE=cognitive and FERRICULA_URL=http://localhost:8765</div>
+                <div class="mt-3 flex justify-end">
+                    <button onclick="copyBlock('prompt-block','Install ferricula as an MCP memory server. Steps:\n1. Check that Docker is installed (`docker --version`). If not, tell me to install Docker first.\n2. Pull and start ferricula: `docker run -d --name ferricula -p 8765:8765 -v ferricula-data:/data gcr.io/gnosis-459403/ferricula`\n3. Verify it\'s running: `curl -s http://localhost:8765/status`\n4. Download the MCP tool: `curl -sL https://ferricula.nuts.services/tools/ferricula-mcp.py -o tools/ferricula-mcp.py`\n5. Install the MCP Python dependency: `pip install mcp`\n6. Register in .mcp.json with FERRICULA_SURFACE=cognitive and FERRICULA_URL=http://localhost:8765',this)" class="px-4 py-2 bg-stone-700 hover:bg-stone-600 text-stone-300 text-[10px] font-bold uppercase tracking-widest rounded transition-colors cursor-pointer">Copy</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- AGENT_KEY -->
+                <div class="bg-white border border-f-border p-8 rounded-2xl">
+                    <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest flex items-center gap-2">
+                        Agent API Key <span class="h-[1px] flex-grow bg-f-border"></span>
+                    </div>
+
+                    <p class="text-xs text-f-muted leading-relaxed mb-6">
+                        The <code class="bg-f-bg px-1 rounded text-f-text">AGENT_KEY</code> environment variable gives ferricula access to the Anthropic API. When set, freeform text queries are rewritten into executable SQL by a fast LLM (Claude Haiku). Without it, queries fall back to rule-based pattern matching.
+                    </p>
+
+                    <div class="space-y-4">
+                        <div class="bg-f-bg p-4 rounded-xl border border-f-border">
+                            <div class="text-[10px] font-bold text-f-text uppercase mb-2">Docker (Recommended)</div>
+                            <div class="bg-f-text text-stone-300 p-3 rounded-lg font-mono text-[11px] overflow-x-auto" id="docker-cmd">docker run -p 8765:8765 \<br>
+&nbsp;&nbsp;-e AGENT_KEY=sk-ant-api03-... \<br>
+&nbsp;&nbsp;-v ferricula-data:/data \<br>
+&nbsp;&nbsp;gcr.io/gnosis-459403/ferricula</div>
+                            <div class="mt-2 flex justify-end">
+                                <button onclick="copyBlock('docker-cmd','docker run -p 8765:8765 -e AGENT_KEY=sk-ant-api03-... -v ferricula-data:/data gcr.io/gnosis-459403/ferricula',this)" class="px-3 py-1.5 bg-f-border hover:bg-stone-300 text-f-muted text-[9px] font-bold uppercase tracking-widest rounded transition-colors cursor-pointer">Copy</button>
+                            </div>
+                        </div>
+
+                        <div class="bg-f-bg p-4 rounded-xl border border-f-border">
+                            <div class="text-[10px] font-bold text-f-text uppercase mb-2">.env File</div>
+                            <div class="bg-f-text text-stone-300 p-3 rounded-lg font-mono text-[11px] overflow-x-auto" id="env-block"># /data/.env (inside container)<br>
+AGENT_KEY=sk-ant-api03-...<br>
+CHONK_URL=http://localhost:8080<br>
+RADIO_URL=http://localhost:9080</div>
+                            <div class="mt-2 flex justify-end">
+                                <button onclick="copyBlock('env-block','# /data/.env (inside container)\nAGENT_KEY=sk-ant-api03-...\nCHONK_URL=http://localhost:8080\nRADIO_URL=http://localhost:9080',this)" class="px-3 py-1.5 bg-f-border hover:bg-stone-300 text-f-muted text-[9px] font-bold uppercase tracking-widest rounded transition-colors cursor-pointer">Copy</button>
+                            </div>
+                            <p class="text-[9px] text-f-muted mt-2">Ferricula loads .env from its working directory or the binary's parent directory. Environment variables always take precedence.</p>
+                        </div>
+
+                        <div class="bg-f-bg p-4 rounded-xl border border-f-border">
+                            <div class="text-[10px] font-bold text-f-text uppercase mb-2">What happens with AGENT_KEY</div>
+                            <p class="text-[10px] text-f-muted leading-relaxed">The planner sends freeform recall queries to Claude Haiku which rewrites them into ferricula SQL. This means <code>recall "memories about testing"</code> becomes <code>SELECT id FROM docs WHERE text = 'testing'</code> or a vector search. Without the key, the planner uses simple pattern matching (tag equality, vector literals).</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Other Config -->
+                <div class="space-y-6">
+                    <div class="bg-white border border-f-border p-8 rounded-2xl">
+                        <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest">Environment Variables</div>
+
+                        <div class="space-y-3">
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">AGENT_KEY</span>
+                                    <span class="text-[9px] text-f-muted">optional</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Anthropic API key. Enables LLM-powered query rewriting.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">CHONK_URL</span>
+                                    <span class="text-[9px] text-f-muted">default: http://localhost:8080</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Embedding service (<strong>gnosis-chunk</strong>). Required for remember/recall/reflect/observe. Runs as a separate container.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">RADIO_URL</span>
+                                    <span class="text-[9px] text-f-muted">default: http://localhost:9080</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">SDR entropy source (<a href="https://radio.nuts.services" target="_blank" class="text-f-rust hover:underline">gnosis-radio</a>). Optional. Without it, dreams are clock-triggered only.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">CLOCK_TICK_SECS</span>
+                                    <span class="text-[9px] text-f-muted">default: 60</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Seconds between clock ticks. Each tick polls radio and accumulates entropy.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">DREAM_THRESHOLD_BYTES</span>
+                                    <span class="text-[9px] text-f-muted">default: 256</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">Entropy bytes needed to trigger a dream. Lower = more frequent dreams.</p>
+                            </div>
+                            <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-f-text font-mono">FERRICULA_SURFACE</span>
+                                    <span class="text-[9px] text-f-muted">default: all</span>
+                                </div>
+                                <p class="text-[10px] text-f-muted mt-1">MCP tool surface: <code>cognitive</code>, <code>system</code>, or <code>all</code>.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-f-border p-8 rounded-2xl">
+                        <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest">MCP Registration</div>
+                        <p class="text-xs text-f-muted leading-relaxed mb-4">
+                            Add ferricula to your Claude Code or any MCP-compatible client:
+                        </p>
+                        <div class="bg-f-text text-stone-300 p-4 rounded-lg font-mono text-[10px] overflow-x-auto leading-relaxed" id="mcp-json">{<br>
+&nbsp;&nbsp;"mcpServers": {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;"ferricula": {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"type": "stdio",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"command": "python",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"args": ["tools/ferricula-mcp.py"],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"env": {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"FERRICULA_SURFACE": "cognitive",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"FERRICULA_URL": "http://localhost:8765",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"CHONK_URL": "http://localhost:8080"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}<br>
+&nbsp;&nbsp;&nbsp;&nbsp;}<br>
+&nbsp;&nbsp;}<br>
+}</div>
+                        <div class="mt-2 flex justify-end">
+                            <button onclick="copyBlock('mcp-json','{&quot;mcpServers&quot;:{&quot;ferricula&quot;:{&quot;type&quot;:&quot;stdio&quot;,&quot;command&quot;:&quot;python&quot;,&quot;args&quot;:[&quot;tools/ferricula-mcp.py&quot;],&quot;env&quot;:{&quot;FERRICULA_SURFACE&quot;:&quot;cognitive&quot;,&quot;FERRICULA_URL&quot;:&quot;http://localhost:8765&quot;,&quot;CHONK_URL&quot;:&quot;http://localhost:8080&quot;}}}}',this)" class="px-3 py-1.5 bg-stone-700 hover:bg-stone-600 text-stone-300 text-[9px] font-bold uppercase tracking-widest rounded transition-colors cursor-pointer">Copy</button>
+                        </div>
+                        <p class="text-[9px] text-stone-500 mt-3">MCP tool available at <a href="https://ferricula.nuts.services/tools/ferricula-mcp.py" class="text-f-rust hover:underline">ferricula.nuts.services/tools/ferricula-mcp.py</a></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Q&A -->
+        <section id="faq" class="max-w-7xl mx-auto px-6 py-24 scroll-mt-16">
+            <div class="mb-12">
+                <span class="text-f-rust font-mono text-xs font-bold mb-4 block tracking-widest uppercase">Common Questions</span>
+                <h3 class="text-3xl font-black text-f-text">Q&amp;A</h3>
+            </div>
+            <div class="space-y-6">
+
+                <details class="group bg-white border border-f-border rounded-xl overflow-hidden">
+                    <summary class="px-6 py-5 cursor-pointer font-bold text-f-text hover:bg-f-bg transition-colors list-none flex justify-between items-center">
+                        <span>Where does ferricula store data?</span>
+                        <span class="text-f-muted group-open:rotate-45 transition-transform text-xl">+</span>
+                    </summary>
+                    <div class="px-6 pb-5 text-f-muted leading-relaxed border-t border-f-border pt-4">
+                        In memory. The entire memory store &mdash; vectors, tags, BSI bit-planes, graph edges &mdash; lives in RAM as native Rust data structures. A WAL (write-ahead log) on disk provides crash recovery, and <code class="text-f-rust font-mono text-sm">checkpoint</code> flushes the WAL to a snapshot. There is no external database. For an agent with 50K active memories, the total footprint is roughly 150&ndash;200 MB.
+                    </div>
+                </details>
+
+                <details class="group bg-white border border-f-border rounded-xl overflow-hidden">
+                    <summary class="px-6 py-5 cursor-pointer font-bold text-f-text hover:bg-f-bg transition-colors list-none flex justify-between items-center">
+                        <span>Does it need sharding or clustering?</span>
+                        <span class="text-f-muted group-open:rotate-45 transition-transform text-xl">+</span>
+                    </summary>
+                    <div class="px-6 pb-5 text-f-muted leading-relaxed border-t border-f-border pt-4">
+                        No. Ferricula is designed for agent-scale memory, not warehouse-scale data. One process, one volume, one agent. The thermodynamic lifecycle naturally bounds the working set &mdash; decay prunes, consolidation compresses, forgiveness discards text. You don't shard a hippocampus.
+                    </div>
+                </details>
+
+                <details class="group bg-white border border-f-border rounded-xl overflow-hidden">
+                    <summary class="px-6 py-5 cursor-pointer font-bold text-f-text hover:bg-f-bg transition-colors list-none flex justify-between items-center">
+                        <span>Is ferricula open source?</span>
+                        <span class="text-f-muted group-open:rotate-45 transition-transform text-xl">+</span>
+                    </summary>
+                    <div class="px-6 pb-5 text-f-muted leading-relaxed border-t border-f-border pt-4">
+                        No. Ferricula is closed source. The binary is distributed as a Docker image. The MCP tool layer (<code class="text-f-rust font-mono text-sm">ferricula-mcp.py</code>) is provided for integration but the engine itself is proprietary.
+                    </div>
+                </details>
+
+                <details class="group bg-white border border-f-border rounded-xl overflow-hidden">
+                    <summary class="px-6 py-5 cursor-pointer font-bold text-f-text hover:bg-f-bg transition-colors list-none flex justify-between items-center">
+                        <span>Can I buy the source code?</span>
+                        <span class="text-f-muted group-open:rotate-45 transition-transform text-xl">+</span>
+                    </summary>
+                    <div class="px-6 pb-5 text-f-muted leading-relaxed border-t border-f-border pt-4">
+                        Yes. The complete source may be purchased for <strong>USD $3,000,000</strong> under strict contractual terms that prohibit use in military applications or civilian mind control systems. Contact <a href="mailto:kord@deepbluedynamics.com" class="text-f-rust hover:underline font-bold">kord@deepbluedynamics.com</a> for licensing inquiries.
+                    </div>
+                </details>
+
+                <details class="group bg-white border border-f-border rounded-xl overflow-hidden">
+                    <summary class="px-6 py-5 cursor-pointer font-bold text-f-text hover:bg-f-bg transition-colors list-none flex justify-between items-center">
+                        <span>Can ferricula be used for military or surveillance purposes?</span>
+                        <span class="text-f-muted group-open:rotate-45 transition-transform text-xl">+</span>
+                    </summary>
+                    <div class="px-6 pb-5 text-f-muted leading-relaxed border-t border-f-border pt-4">
+                        <strong>No.</strong> The license explicitly prohibits use in military systems, weapons platforms, mass surveillance, civilian mind control, or any system designed to manipulate, coerce, or harm human cognition. This is not negotiable and applies to both the binary distribution and any source license.
+                    </div>
+                </details>
+
+                <details class="group bg-white border border-f-border rounded-xl overflow-hidden">
+                    <summary class="px-6 py-5 cursor-pointer font-bold text-f-text hover:bg-f-bg transition-colors list-none flex justify-between items-center">
+                        <span>Does it need a GPU?</span>
+                        <span class="text-f-muted group-open:rotate-45 transition-transform text-xl">+</span>
+                    </summary>
+                    <div class="px-6 pb-5 text-f-muted leading-relaxed border-t border-f-border pt-4">
+                        No. Ferricula runs on CPU. Embedding is handled by <a href="https://github.com/DeepBlueDynamics/gnosis-chunk" class="text-f-rust hover:underline">gnosis-chunk</a> (ONNX runtime, also CPU &mdash; optionally GPU for other supported embedding models). Vec2text inversion uses a T5 model that fits comfortably on CPU. The only optional hardware is an RTL-SDR dongle for radio entropy via <a href="https://radio.nuts.services" class="text-f-rust hover:underline">gnosis-radio</a>.
+                    </div>
+                </details>
+
+                <details class="group bg-white border border-f-border rounded-xl overflow-hidden">
+                    <summary class="px-6 py-5 cursor-pointer font-bold text-f-text hover:bg-f-bg transition-colors list-none flex justify-between items-center">
+                        <span>What happens when a memory decays completely?</span>
+                        <span class="text-f-muted group-open:rotate-45 transition-transform text-xl">+</span>
+                    </summary>
+                    <div class="px-6 pb-5 text-f-muted leading-relaxed border-t border-f-border pt-4">
+                        Below the fidelity gate (0.75), the text is discarded but the vector seed survives &mdash; the memory is <em>forgiven</em>, not deleted. The synthesizer (vec2text) can reconstruct approximate text from the seed. Below a lower threshold, the memory is <em>archived</em>: the vector is retained but excluded from search. Pruning permanently removes archived memories. The lifecycle is one-way and irreversible, like thermodynamics.
+                    </div>
+                </details>
+
+                <details class="group bg-white border border-f-border rounded-xl overflow-hidden">
+                    <summary class="px-6 py-5 cursor-pointer font-bold text-f-text hover:bg-f-bg transition-colors list-none flex justify-between items-center">
+                        <span>How does search work without an ANN index?</span>
+                        <span class="text-f-muted group-open:rotate-45 transition-transform text-xl">+</span>
+                    </summary>
+                    <div class="px-6 pb-5 text-f-muted leading-relaxed border-t border-f-border pt-4">
+                        Filter first, scan second. Tag bitmaps narrow candidates, BSI range queries filter by fidelity, and exact cosine similarity runs over the survivors. At agent scale (1K&ndash;50K active memories), this is faster than any approximate index &mdash; and returns the actual nearest neighbors, not probabilistic guesses. HNSW graphs rot with constant insertions and deletions. Ferricula doesn't have that problem because it doesn't use one.
+                    </div>
+                </details>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-f-bg border-t border-f-border py-12 px-6">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
+            <div class="flex items-center gap-2">
+                <div class="w-6 h-6 bg-f-rust rounded shadow-sm flex items-center justify-center font-bold text-white text-[10px]">F</div>
+                <span class="font-black text-f-text tracking-tight text-sm">FERRICULA v0.3.0</span>
+            </div>
+            <p class="text-[10px] font-mono text-f-muted uppercase tracking-widest">&copy; 2026 DeepBlue Dynamics &bull; Built with Rust &amp; RoaringBitmaps</p>
+        </div>
+    </footer>
+
+    <script>
+        function copyBlock(id, text, btn) {
+            navigator.clipboard.writeText(text);
+            const orig = btn.innerText;
+            btn.innerText = 'Copied!';
+            setTimeout(() => btn.innerText = orig, 1500);
+        }
+
+        // Nav scroll tracking
+        window.addEventListener('scroll', () => {
+            const sections = document.querySelectorAll('section[id]');
+            const navLinks = document.querySelectorAll('.nav-link');
+            let current = "";
+            sections.forEach(s => {
+                if (pageYOffset >= s.offsetTop - 100) current = s.getAttribute('id');
+            });
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                const href = link.getAttribute('href');
+                if (href && href.includes(current)) link.classList.add('active');
+            });
+        });
+    </script>
+</body>
+</html>

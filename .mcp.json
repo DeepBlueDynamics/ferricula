@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "ferricula": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "C:/Users/kord/Code/gnosis/ferricula/ferricula/tools/ferricula-mcp.py"
+      ],
+      "env": {
+        "NO_COLOR": "1",
+        "FERRICULA_SURFACE": "cognitive",
+        "RADIO_URL": "http://localhost:9080",
+        "CLOCK_TICK_SECS": "60",
+        "CHONK_URL": "http://localhost:8080",
+        "FERRICULA_URL": "http://localhost:8765"
+      }
+    }
+  }
+}

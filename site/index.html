@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ferricula | Thermodynamic BSI Architecture</title>
+    <meta name="description" content="Thermodynamic memory engine for AI agents. Decay, consolidation, dreaming, entropy. Built in Rust.">
+    <meta property="og:title" content="Ferricula | Thermodynamic Memory Engine">
+    <meta property="og:description" content="Memory as entropy. Decay, consolidation, dreaming, and radio entropy for AI agents. Built in Rust.">
+    <meta property="og:image" content="https://ferricula.nuts.services/ferricula.png">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://ferricula.nuts.services">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Ferricula | Thermodynamic Memory Engine">
+    <meta name="twitter:description" content="Memory as entropy. Decay, consolidation, dreaming, and radio entropy for AI agents. Built in Rust.">
+    <meta name="twitter:image" content="https://ferricula.nuts.services/ferricula.png">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐛</text></svg>">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'f-bg': '#f5f5f4',
+                        'f-surface': '#ffffff',
+                        'f-border': '#e7e5e4',
+                        'f-rust': '#b91c1c',
+                        'f-amber': '#d97706',
+                        'f-emerald': '#059669',
+                        'f-purple': '#7c3aed',
+                        'f-slate': '#475569',
+                        'f-text': '#1c1917',
+                        'f-muted': '#78716c'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f5f5f4; color: #1c1917; scroll-behavior: smooth; }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin: auto;
+            height: 320px;
+        }
+
+        .nav-link {
+            transition: all 0.2s ease;
+            border-bottom: 2px solid transparent;
+        }
+        .nav-link.active {
+            color: #b91c1c;
+            border-bottom-color: #b91c1c;
+        }
+
+        .bsi-grid .cell {
+            background: #ffffff;
+            border: 1px solid #e7e5e4;
+            padding: 0.5rem;
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+        }
+        .bit-one { background: rgba(185, 28, 28, 0.05) !important; color: #b91c1c; font-weight: 700; }
+        .bit-zero { color: #d6d3d1; }
+
+        .step-active { border-left: 3px solid #b91c1c; background: #fafaf9; }
+
+        .step-connector,
+        .pipeline-line {
+            width: 100%;
+            height: 0;
+            border-top: 2px dashed #d6d3d1;
+            border-right: none;
+            border-bottom: none;
+            border-left: none;
+            margin: 10px 0;
+            display: block;
+        }
+
+        .bv {
+            width: 24px; height: 24px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+        }
+        .bv.one { background: rgba(185, 28, 28, 0.1); color: #b91c1c; font-weight: 700; }
+        .bv.zero { color: #d6d3d1; border: 1px solid #f5f5f4; }
+        .bv.res { background: #1c1917; color: #ffffff; }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 4px; }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen font-sans">
+
+    <!-- Header -->
+    <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-f-border">
+        <div class="max-w-7xl mx-auto px-6 h-16 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-f-rust rounded shadow-sm flex items-center justify-center font-bold text-white italic">F</div>
+                <h1 class="text-xl font-black tracking-tighter text-f-text">FERRICULA</h1>
+            </div>
+            <nav class="hidden md:flex gap-8 text-[10px] font-bold uppercase tracking-[0.2em] text-f-muted">
+                <a href="#manifold" class="nav-link active pb-1">Manifold</a>
+                <a href="#bsi" class="nav-link pb-1">BSI Engine</a>
+                <a href="#encryption" class="nav-link pb-1">Encryption</a>
+                <a href="#inversion" class="nav-link pb-1">Inversion</a>
+                <a href="#graph" class="nav-link pb-1">Graph Store</a>
+                <a href="#terms" class="nav-link pb-1">Terms</a>
+                <a href="#vectors" class="nav-link pb-1">Vectors</a>
+                <a href="#sdr" class="nav-link pb-1">SDR</a>
+                <a href="#api" class="nav-link pb-1">Agent</a>
+                <a href="#about" class="nav-link pb-1">About</a>
+                <a href="docs.html" class="nav-link pb-1">Docs</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="flex-grow">
+
+        <!-- SECTION 1: The Manifold (Hero & Decay) -->
+        <section id="manifold" class="max-w-7xl mx-auto px-6 py-20 scroll-mt-16">
+            <div class="flex flex-col lg:flex-row gap-16 items-center">
+                <div class="lg:w-5/12">
+                    <span class="text-f-rust font-mono text-xs font-bold mb-4 block tracking-widest uppercase">Thermodynamic State</span>
+                    <h2 class="text-5xl font-black text-f-text mb-6 leading-tight">
+                        Memory as <span class="text-f-rust italic">Entropy.</span>
+                    </h2>
+                    <p class="text-f-muted text-lg leading-relaxed mb-8">
+                        Ferricula models memory fidelity as an energy state. High-energy memories are <strong>Active</strong>, but as time passes and disuse grows, they decay naturally unless reinforced. Below the fidelity gate, text is discarded but the vector seed survives &mdash; and the synthesizer can reconstruct it.
+                    </p>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="p-4 bg-white border border-f-border rounded-xl">
+                            <div class="text-[10px] font-bold text-f-muted uppercase mb-1">Decay &alpha;</div>
+                            <div class="text-xl font-black text-f-rust">0.001&ndash;0.02</div>
+                        </div>
+                        <div class="p-4 bg-white border border-f-border rounded-xl">
+                            <div class="text-[10px] font-bold text-f-muted uppercase mb-1">Keystones</div>
+                            <div class="text-xl font-black text-f-purple">Immortal</div>
+                        </div>
+                        <div class="p-4 bg-white border border-f-border rounded-xl">
+                            <div class="text-[10px] font-bold text-f-muted uppercase mb-1">Synthesizer</div>
+                            <div class="text-xl font-black text-f-emerald">vec2text</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="lg:w-7/12 w-full">
+                    <div class="bg-white p-6 rounded-2xl border border-f-border shadow-sm">
+                        <div class="chart-container">
+                            <canvas id="decayChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Quick Start -->
+        <section class="bg-f-text py-12 scroll-mt-16">
+            <div class="max-w-7xl mx-auto px-6">
+                <h3 class="text-xl font-black text-white mb-1">Run it.</h3>
+                <p class="text-stone-400 text-sm mb-4">One command. Persistent storage. HTTP API on :8765.</p>
+                <div id="docker-cmd" onclick="dockerCopy()" class="bg-stone-900 p-6 rounded-xl font-mono text-sm text-stone-300 flex items-center justify-between gap-4 cursor-pointer group hover:bg-stone-800 transition-all border-2 border-transparent">
+                    <code id="docker-text"><span class="text-stone-500">$</span> docker run -p 8765:8765 -v ferricula-data:/data gcr.io/gnosis-459403/ferricula</code>
+                    <span id="docker-btn" class="px-4 py-2 bg-stone-700 group-hover:bg-f-rust text-stone-300 group-hover:text-white text-[10px] font-bold uppercase tracking-widest rounded transition-all shrink-0">Copy</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 2: BSI Engine -->
+        <section id="bsi" class="bg-f-surface border-y border-f-border py-24 scroll-mt-16">
+            <div class="max-w-7xl mx-auto px-6">
+                <div class="mb-16">
+                    <h3 class="text-3xl font-black text-f-text mb-4">Bit-Sliced Index (BSI) Engine</h3>
+                    <p class="text-f-muted max-w-2xl leading-relaxed">
+                        Fidelity is transposed into bit-planes backed by <strong>Roaring Bitmaps</strong> &mdash; a hybrid of sorted arrays (sparse) and uncompressed bitsets (dense), with run-length encoding for long runs. Operations run at binary speed: AND, OR, XOR on compressed bitmaps execute as CPU-native bitwise instructions over cache-aligned 64-bit words. A range query across a million memories resolves in microseconds &mdash; no row scanning, no branching, just bits.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                    <!-- Transposed Table -->
+                    <div>
+                        <div class="text-[10px] font-bold text-f-rust uppercase mb-4 tracking-widest flex items-center gap-2">
+                            01: Fidelity Bit-Planes <span class="h-[1px] flex-grow bg-f-border"></span>
+                        </div>
+                        <div class="bg-f-border rounded-lg overflow-hidden grid grid-cols-6 gap-[1px] bsi-grid shadow-sm">
+                            <div class="bg-f-bg p-3 font-bold text-f-muted">Mem ID</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-muted">Fid</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-purple">B3 (8)</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-emerald">B2 (4)</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-amber">B1 (2)</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-rust">B0 (1)</div>
+
+                            <div class="cell">m0</div><div class="cell font-bold">3</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-one">1</div>
+                            <div class="cell">m1</div><div class="cell font-bold">7</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-one">1</div><div class="cell bit-one">1</div>
+                            <div class="cell">m2</div><div class="cell font-bold">5</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div>
+                            <div class="cell">m3</div><div class="cell font-bold">12</div><div class="cell bit-one">1</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div>
+                            <div class="cell">m4</div><div class="cell font-bold">9</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div>
+                            <div class="cell">m5</div><div class="cell font-bold">2</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div>
+                        </div>
+                        <p class="mt-4 text-[10px] text-f-muted font-mono uppercase italic">Columns represent Roaring Bitmaps stored in the Rust memory layer.</p>
+                    </div>
+
+                    <!-- Simulation Logic -->
+                    <div class="bg-f-bg border border-f-border rounded-2xl p-8 shadow-inner">
+                        <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest flex items-center gap-2">
+                            02: Range Resolution Simulation <span class="h-[1px] flex-grow bg-f-border"></span>
+                        </div>
+
+                        <div class="font-mono text-xs bg-white border border-f-border p-4 rounded-lg mb-8 shadow-sm">
+                            <span class="text-blue-600">QUERY</span> fidelity <span class="text-f-rust font-bold">&gt; 5</span> (Binary: 0101)
+                        </div>
+
+                        <div class="space-y-6">
+                            <div class="flex gap-4 p-4 rounded-xl transition-all" id="sim-1">
+                                <div class="w-8 h-8 bg-white border border-f-border rounded-full flex items-center justify-center font-mono text-xs text-f-muted">1</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-2">Bit 3 (Threshold: 0)</h5>
+                                    <div class="flex items-center gap-4 text-[10px] font-mono mb-2">
+                                        <span class="w-16 text-right text-f-muted">Slice 3</span>
+                                        <div class="flex gap-1">
+                                            <div class="bv zero">0</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv one">1</div><div class="bv one">1</div><div class="bv zero">0</div>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-4 text-[10px] font-mono">
+                                        <span class="w-16 text-right text-f-rust font-bold">GT-Bit</span>
+                                        <div class="flex gap-1">
+                                            <div class="bv zero">0</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv res">1</div><div class="bv res">1</div><div class="bv zero">0</div>
+                                        </div>
+                                        <span class="text-f-muted text-[8px] uppercase">{m3, m4} definitely greater</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex gap-4 p-4 rounded-xl transition-all" id="sim-2">
+                                <div class="w-8 h-8 bg-white border border-f-border rounded-full flex items-center justify-center font-mono text-xs text-f-muted">2</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-2">Bit 1 (Threshold: 0)</h5>
+                                    <div class="flex items-center gap-4 text-[10px] font-mono mb-2">
+                                        <span class="w-16 text-right text-f-muted">Slice 1</span>
+                                        <div class="flex gap-1">
+                                            <div class="bv one">1</div><div class="bv one">1</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv one">1</div>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-4 text-[10px] font-mono">
+                                        <span class="w-16 text-right text-f-rust font-bold">New GT</span>
+                                        <div class="flex gap-1">
+                                            <div class="bv zero">0</div><div class="bv res">1</div><div class="bv zero">0</div><div class="bv res">1</div><div class="bv res">1</div><div class="bv zero">0</div>
+                                        </div>
+                                        <span class="text-f-muted text-[8px] uppercase">Added m1 via EQ &amp; Slice1</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-8 p-4 bg-f-text text-white rounded-lg shadow-lg">
+                            <div class="text-[10px] font-bold text-f-rust uppercase mb-1">Final Result Set</div>
+                            <div class="text-sm font-mono tracking-tight">{m1, m3, m4} &rarr; 5+ Fidelity</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: Encryption -->
+        <section id="encryption" class="max-w-7xl mx-auto px-6 py-24 scroll-mt-16">
+            <div class="mb-16">
+                <h3 class="text-3xl font-black text-f-text mb-4">Encryption</h3>
+                <p class="text-f-muted max-w-3xl leading-relaxed">
+                    Each agent has a unique identity. That identity produces a private key. When two agents need to share memories, they perform key agreement to produce a shared secret. That secret becomes a rotation matrix. The rotation encrypts embeddings while preserving their geometric relationships &mdash; cosine similarity works on encrypted vectors without decryption.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                <!-- The Pipeline -->
+                <div class="bg-white border border-f-border p-8 rounded-2xl">
+                    <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest flex items-center gap-2">
+                        Key Derivation Pipeline <span class="h-[1px] flex-grow bg-f-border"></span>
+                    </div>
+
+                    <div class="space-y-1">
+                        <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                            <div class="w-10 h-10 bg-f-rust/10 text-f-rust rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">1</div>
+                            <div class="flex-grow">
+                                <h5 class="text-xs font-bold text-f-text mb-1">Private Key (32 bytes)</h5>
+                                <p class="text-[10px] text-f-muted leading-relaxed">Derived deterministically from the agent's identity seed. The seed comes from entropy at agent creation. No random number generator is called at runtime &mdash; the key is fixed for the lifetime of the identity.</p>
+                            </div>
+                        </div>
+                        <div class="pipeline-line" aria-hidden="true"></div>
+                        <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                            <div class="w-10 h-10 bg-f-amber/10 text-f-amber rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">2</div>
+                            <div class="flex-grow">
+                                <h5 class="text-xs font-bold text-f-text mb-1">X25519 Diffie-Hellman</h5>
+                                <p class="text-[10px] text-f-muted leading-relaxed">Elliptic-curve key agreement. Agent A's private key + Agent B's public key = shared secret. Agent B's private key + Agent A's public key = the same shared secret. Neither agent reveals their private key.</p>
+                                <div class="bg-white p-2 mt-2 rounded text-[9px] font-mono text-f-muted border border-f-border">shared = diffie_hellman(our_private, their_public)</div>
+                            </div>
+                        </div>
+                        <div class="pipeline-line" aria-hidden="true"></div>
+                        <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                            <div class="w-10 h-10 bg-f-emerald/10 text-f-emerald rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">3</div>
+                            <div class="flex-grow">
+                                <h5 class="text-xs font-bold text-f-text mb-1">HKDF-SHA256 Expansion</h5>
+                                <p class="text-[10px] text-f-muted leading-relaxed">The 32-byte shared secret is expanded into a 32-byte transform seed using HKDF. A context label ensures different purposes (e.g. "organize" vs "retrieve") produce different seeds from the same shared secret.</p>
+                                <div class="bg-white p-2 mt-2 rounded text-[9px] font-mono text-f-muted border border-f-border">seed = hkdf(shared, context=b"ferricula-transform-seed")</div>
+                            </div>
+                        </div>
+                        <div class="pipeline-line" aria-hidden="true"></div>
+                        <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                            <div class="w-10 h-10 bg-f-purple/10 text-f-purple rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">4</div>
+                            <div class="flex-grow">
+                                <h5 class="text-xs font-bold text-f-text mb-1">Orthogonal Matrix (Gram-Schmidt)</h5>
+                                <p class="text-[10px] text-f-muted leading-relaxed">The seed initializes an N&times;N matrix. Gram-Schmidt orthonormalization forces it into a pure rotation &mdash; every row is unit-length and perpendicular to every other row. Multiplying a vector by this matrix rotates it without changing its length or the angles between vectors.</p>
+                                <div class="bg-white p-2 mt-2 rounded text-[9px] font-mono text-f-muted border border-f-border">ortho = gram_schmidt(seed_matrix) // 768&times;768</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Properties -->
+                <div class="space-y-6">
+                    <div class="bg-f-bg border border-f-border rounded-2xl p-8">
+                        <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest">Why Orthogonal</div>
+
+                        <div class="space-y-4">
+                            <div class="bg-white p-4 rounded-xl border border-f-border">
+                                <h5 class="text-xs font-bold text-f-text mb-2">Search works on ciphertext</h5>
+                                <p class="text-[10px] text-f-muted leading-relaxed">Cosine similarity is preserved under orthogonal rotation. Two encrypted vectors have the same similarity score as their plaintext originals. You can search without decrypting.</p>
+                            </div>
+                            <div class="bg-white p-4 rounded-xl border border-f-border">
+                                <h5 class="text-xs font-bold text-f-text mb-2">Decryption is the transpose</h5>
+                                <p class="text-[10px] text-f-muted leading-relaxed">For an orthogonal matrix Q, the inverse is Q<sup>T</sup>. No matrix inversion needed. Encrypt: <code>v' = Q &middot; v</code>. Decrypt: <code>v = Q<sup>T</sup> &middot; v'</code>. Both are a single matrix-vector multiply.</p>
+                            </div>
+                            <div class="bg-white p-4 rounded-xl border border-f-border">
+                                <h5 class="text-xs font-bold text-f-text mb-2">Decay requires plaintext</h5>
+                                <p class="text-[10px] text-f-muted leading-relaxed">Fidelity decay is not a rotation &mdash; it shrinks the vector toward a projection. This doesn't commute with the encryption transform. The system must decrypt, apply decay, then re-encrypt. This is enforced in the dream cycle.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-f-text text-white p-6 rounded-2xl">
+                        <div class="text-[10px] font-bold text-f-rust uppercase mb-3">Per-Agent Isolation</div>
+                        <p class="text-xs text-stone-400 leading-relaxed">
+                            Each agent's memories are rotated by its own transform. Agent A cannot read Agent B's vectors &mdash; they look like random noise without the shared secret. To share a memory, Agent A decrypts it with their transform, then re-encrypts it with the pairwise transform derived from A and B's shared secret. This is the offering protocol.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 4: Vec2text Inversion -->
+        <section id="inversion" class="bg-f-surface border-y border-f-border py-24 scroll-mt-16">
+            <div class="max-w-7xl mx-auto px-6">
+                <div class="mb-16">
+                    <h3 class="text-3xl font-black text-f-text mb-4">Vec2text Inversion</h3>
+                    <p class="text-f-muted max-w-3xl leading-relaxed">
+                        Given a 768-dimensional embedding, reconstruct the text that produced it. Four ONNX models run in sequence inside a Rust process &mdash; no Python. This is how ferricula rebuilds forgotten memories from their vector seeds, and how it verifies that encryption hasn't destroyed semantic content.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <!-- Pipeline -->
+                    <div class="lg:col-span-2 bg-white border border-f-border p-8 rounded-2xl">
+                        <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest flex items-center gap-2">
+                            Inversion Pipeline (4 ONNX models) <span class="h-[1px] flex-grow bg-f-border"></span>
+                        </div>
+
+                        <div class="space-y-1">
+                            <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                                <div class="w-10 h-10 bg-f-rust/10 text-f-rust rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">E</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-1">Embedder &mdash; gtr-t5-base.onnx</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">T5 encoder, mean-pooled, L2-normalized to 768 dimensions. This is the forward direction: text in, vector out. The same model used for ingestion.</p>
+                                </div>
+                            </div>
+                            <div class="pipeline-line" aria-hidden="true"></div>
+                            <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                                <div class="w-10 h-10 bg-f-amber/10 text-f-amber rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">P</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-1">Projection &mdash; projection.onnx</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">Learned MLP that expands a single 768d vector into a sequence of 16 hidden states at T5 scale (16 &times; 768). This bridges the gap between embedding space and language model input space.</p>
+                                </div>
+                            </div>
+                            <div class="pipeline-line" aria-hidden="true"></div>
+                            <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                                <div class="w-10 h-10 bg-f-emerald/10 text-f-emerald rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">T5</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-1">Encoder &mdash; encoder.onnx</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">T5 encoder takes the projected sequence via <code>inputs_embeds</code> (not token IDs). Produces encoder hidden states that condition the decoder.</p>
+                                </div>
+                            </div>
+                            <div class="pipeline-line" aria-hidden="true"></div>
+                            <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                                <div class="w-10 h-10 bg-f-purple/10 text-f-purple rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">D</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-1">Decoder &mdash; decoder.onnx</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">Autoregressive greedy decode. Generates one token at a time, feeding each output back as input until EOS. Produces the hypothesis text &mdash; the system's best guess at what the original memory said.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 bg-f-text text-white p-4 rounded-lg">
+                            <div class="text-[10px] font-bold text-f-rust uppercase mb-1">Quality Check</div>
+                            <div class="text-xs text-stone-400 leading-relaxed">
+                                After inversion, the hypothesis text is compared to the original via word-set Jaccard similarity. This measures how much semantic content survived. Used as a fidelity gate: if the inverted text doesn't resemble the original, something has gone wrong in the manifold.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Model Support -->
+                    <div class="space-y-6">
+                        <div class="bg-f-bg border border-f-border rounded-2xl p-8">
+                            <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest">Supported Models</div>
+
+                            <div class="space-y-4">
+                                <div class="bg-white p-4 rounded-xl border border-f-border">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-xs font-bold text-f-text">gtr-t5-base</span>
+                                        <span class="px-2 py-0.5 bg-f-emerald/10 text-f-emerald text-[9px] font-bold rounded">OUT OF THE BOX</span>
+                                    </div>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">768 dimensions. Pre-trained vec2text models available from HuggingFace (<code>jxm/gtr__nq__32</code>). Export to ONNX and run. No training required. This is the default.</p>
+                                </div>
+
+                                <div class="bg-white p-4 rounded-xl border border-f-border">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-xs font-bold text-f-text">text-embedding-ada-002</span>
+                                        <span class="px-2 py-0.5 bg-f-emerald/10 text-f-emerald text-[9px] font-bold rounded">OUT OF THE BOX</span>
+                                    </div>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">1536 dimensions. OpenAI's embedding model. Pre-trained vec2text corrector available. Requires an OpenAI API key to generate embeddings, but the inversion models are open.</p>
+                                </div>
+
+                                <div class="bg-white p-4 rounded-xl border border-f-border">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-xs font-bold text-f-text">bge-small-en-v1.5</span>
+                                        <span class="px-2 py-0.5 bg-f-amber/10 text-f-amber text-[9px] font-bold rounded">REQUIRES TRAINING</span>
+                                    </div>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">384 dimensions. Smaller, faster embedder. No pre-trained inverter exists. Train a hypothesis model on MSMARCO (~50 epochs on dual A100 40GB). Training scripts and data pipeline included in the repo.</p>
+                                </div>
+
+                                <div class="bg-white p-4 rounded-xl border border-f-border">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-xs font-bold text-f-text">Any embedding model</span>
+                                        <span class="px-2 py-0.5 bg-f-amber/10 text-f-amber text-[9px] font-bold rounded">REQUIRES TRAINING</span>
+                                    </div>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">The Rust inverter auto-detects embedding dimension from the ONNX model shape. Train a hypothesis model for your embedder, export to the four-file ONNX format, and drop it in. The pipeline adapts.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white border border-f-border p-6 rounded-2xl">
+                            <div class="text-[10px] font-bold text-f-text uppercase mb-3">Four Files</div>
+                            <div class="space-y-2 font-mono text-[10px]">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-2 h-2 rounded bg-f-rust"></div>
+                                    <span class="text-f-muted">gtr-t5-base.onnx</span>
+                                    <span class="text-f-muted ml-auto">embedder</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-2 h-2 rounded bg-f-amber"></div>
+                                    <span class="text-f-muted">inverter/projection.onnx</span>
+                                    <span class="text-f-muted ml-auto">768d &rarr; 16&times;768</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-2 h-2 rounded bg-f-emerald"></div>
+                                    <span class="text-f-muted">inverter/encoder.onnx</span>
+                                    <span class="text-f-muted ml-auto">inputs_embeds</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-2 h-2 rounded bg-f-purple"></div>
+                                    <span class="text-f-muted">inverter/decoder.onnx</span>
+                                    <span class="text-f-muted ml-auto">greedy decode</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-2 h-2 rounded bg-f-slate"></div>
+                                    <span class="text-f-muted">inverter/tokenizer.json</span>
+                                    <span class="text-f-muted ml-auto">T5 vocab</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 5: Graph Binary Store -->
+        <section id="graph" class="max-w-7xl mx-auto px-6 py-24 scroll-mt-16">
+            <div class="mb-16">
+                <h3 class="text-3xl font-black text-f-text mb-4">Graph Binary Store</h3>
+                <p class="text-f-muted max-w-3xl leading-relaxed">
+                    The knowledge graph uses <strong>Roaring Bitmap adjacency sets</strong> instead of edge lists. Each node's neighbors are a compressed bitmap &mdash; intersection finds common neighbors in microseconds, union discovers connected components, XOR isolates exclusive relationships. Cardinality (<code>len()</code>) returns neighbor count in O(1). Edge labels are stored as parallel bitmap layers &mdash; label-filtered queries are a single AND between adjacency and label bitmaps.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- Adjacency Bitmap Visualization -->
+                <div class="lg:col-span-2 bg-white border border-f-border p-8 rounded-2xl">
+                    <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest">Bitmap Adjacency Matrix</div>
+
+                    <div class="overflow-x-auto">
+                        <div class="bg-f-border rounded-lg overflow-hidden grid grid-cols-7 gap-[1px] bsi-grid shadow-sm min-w-[500px]">
+                            <div class="bg-f-bg p-3 font-bold text-f-muted"></div>
+                            <div class="bg-f-bg p-3 font-bold text-f-muted">m0</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-muted">m1</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-muted">m2</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-muted">m3</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-muted">m4</div>
+                            <div class="bg-f-bg p-3 font-bold text-f-muted">m5</div>
+
+                            <div class="cell font-bold text-f-muted">m0</div>
+                            <div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div>
+
+                            <div class="cell font-bold text-f-muted">m1</div>
+                            <div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div>
+
+                            <div class="cell font-bold text-f-muted">m2</div>
+                            <div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div>
+
+                            <div class="cell font-bold text-f-muted">m3</div>
+                            <div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-one">1</div>
+
+                            <div class="cell font-bold text-f-muted">m4</div>
+                            <div class="cell bit-zero">0</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div>
+
+                            <div class="cell font-bold text-f-muted">m5</div>
+                            <div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div><div class="cell bit-one">1</div><div class="cell bit-zero">0</div><div class="cell bit-zero">0</div>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 grid grid-cols-3 gap-4">
+                        <div class="bg-f-bg p-4 rounded-xl border border-f-border">
+                            <div class="text-[10px] font-bold text-f-emerald uppercase mb-1">Intersection</div>
+                            <div class="font-mono text-xs text-f-text">adj[m0] &amp; adj[m3]</div>
+                            <div class="font-mono text-xs text-f-muted mt-1">&rarr; {m1, m5} common</div>
+                        </div>
+                        <div class="bg-f-bg p-4 rounded-xl border border-f-border">
+                            <div class="text-[10px] font-bold text-f-amber uppercase mb-1">Union</div>
+                            <div class="font-mono text-xs text-f-text">adj[m0] | adj[m4]</div>
+                            <div class="font-mono text-xs text-f-muted mt-1">&rarr; {m1,m2,m3,m5} reach</div>
+                        </div>
+                        <div class="bg-f-bg p-4 rounded-xl border border-f-border">
+                            <div class="text-[10px] font-bold text-f-purple uppercase mb-1">XOR</div>
+                            <div class="font-mono text-xs text-f-text">adj[m0] ^ adj[m3]</div>
+                            <div class="font-mono text-xs text-f-muted mt-1">&rarr; {m2,m4} exclusive</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Edge Label Layers -->
+                <div class="bg-f-bg border border-f-border rounded-2xl p-8">
+                    <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest">Edge Label Layers</div>
+                    <p class="text-xs text-f-muted leading-relaxed mb-6">Each label type is a parallel bitmap layer. Query by label is a single AND with the adjacency set.</p>
+
+                    <div class="space-y-4">
+                        <div class="bg-white p-4 rounded-xl border border-f-border">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-3 h-3 rounded bg-f-rust"></div>
+                                <span class="text-[10px] font-bold text-f-text uppercase">caused</span>
+                            </div>
+                            <div class="flex gap-1">
+                                <div class="bv one">1</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv one">1</div><div class="bv zero">0</div><div class="bv zero">0</div>
+                            </div>
+                            <div class="text-[8px] font-mono text-f-muted mt-1">m0&rarr;m1, m3&rarr;m4</div>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl border border-f-border">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-3 h-3 rounded bg-f-emerald"></div>
+                                <span class="text-[10px] font-bold text-f-text uppercase">related</span>
+                            </div>
+                            <div class="flex gap-1">
+                                <div class="bv zero">0</div><div class="bv one">1</div><div class="bv one">1</div><div class="bv zero">0</div><div class="bv one">1</div><div class="bv one">1</div>
+                            </div>
+                            <div class="text-[8px] font-mono text-f-muted mt-1">m1&harr;m2, m4&harr;m5</div>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl border border-f-border">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-3 h-3 rounded bg-f-purple"></div>
+                                <span class="text-[10px] font-bold text-f-text uppercase">contradicts</span>
+                            </div>
+                            <div class="flex gap-1">
+                                <div class="bv zero">0</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv one">1</div><div class="bv zero">0</div>
+                            </div>
+                            <div class="text-[8px] font-mono text-f-muted mt-1">m4 contradicts m3</div>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 bg-white p-4 rounded-xl border border-f-border">
+                        <div class="text-[10px] font-bold text-f-text uppercase mb-2">Query Example</div>
+                        <div class="font-mono text-[10px] text-f-muted leading-relaxed">
+                            <span class="text-f-rust">neighbors</span>(m0, label=<span class="text-f-emerald">"related"</span>)<br>
+                            = adj[m0] <span class="text-f-text font-bold">&amp;</span> label[related]<br>
+                            = <span class="text-f-text font-bold">{m1,m2,m5} &amp; {m1,m2,m4,m5}</span><br>
+                            = <span class="text-f-rust font-bold">{m1, m2, m5}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 4: Prime Tree Term Index -->
+        <section id="terms" class="max-w-7xl mx-auto px-6 py-24 scroll-mt-16">
+            <div class="mb-16">
+                <h3 class="text-3xl font-black text-f-text mb-4">Prime Tree Term Index</h3>
+                <p class="text-f-muted max-w-3xl leading-relaxed">
+                    Every word extracted from memory text becomes a key in the <strong>Prime Tree</strong> &mdash; a hierarchical term-to-bitmap lookup. Each term maps to a <strong>Roaring Bitmap</strong> of memory IDs that contain it. When a term's bitmap exceeds its prime threshold, the node auto-splits into child partitions using modular arithmetic. This is the bridge between text and binary: words become sets, sets become bitwise operations.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                <!-- Term → Bitmap Mapping -->
+                <div class="bg-white border border-f-border p-8 rounded-2xl">
+                    <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest flex items-center gap-2">
+                        01: Word &rarr; Bitmap Lookup <span class="h-[1px] flex-grow bg-f-border"></span>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="bg-f-bg p-4 rounded-xl border border-f-border">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-mono text-sm font-bold text-f-text">"weather"</span>
+                                <span class="text-[9px] font-mono text-f-muted">cardinality: 4</span>
+                            </div>
+                            <div class="flex gap-1">
+                                <div class="bv one">1</div><div class="bv one">1</div><div class="bv zero">0</div><div class="bv one">1</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv one">1</div>
+                            </div>
+                            <div class="text-[8px] font-mono text-f-muted mt-1">{m0, m1, m3, m7} &mdash; RoaringBitmap, compressed</div>
+                        </div>
+                        <div class="bg-f-bg p-4 rounded-xl border border-f-border">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-mono text-sm font-bold text-f-text">"protocol"</span>
+                                <span class="text-[9px] font-mono text-f-muted">cardinality: 2</span>
+                            </div>
+                            <div class="flex gap-1">
+                                <div class="bv zero">0</div><div class="bv zero">0</div><div class="bv one">1</div><div class="bv zero">0</div><div class="bv zero">0</div><div class="bv one">1</div><div class="bv zero">0</div><div class="bv zero">0</div>
+                            </div>
+                            <div class="text-[8px] font-mono text-f-muted mt-1">{m2, m5} &mdash; exact term match</div>
+                        </div>
+                        <div class="bg-f-bg p-4 rounded-xl border border-f-border">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-mono text-sm font-bold text-f-text">"entropy"</span>
+                                <span class="text-[9px] font-mono text-f-muted">cardinality: 6</span>
+                            </div>
+                            <div class="flex gap-1">
+                                <div class="bv one">1</div><div class="bv one">1</div><div class="bv one">1</div><div class="bv zero">0</div><div class="bv one">1</div><div class="bv one">1</div><div class="bv zero">0</div><div class="bv one">1</div>
+                            </div>
+                            <div class="text-[8px] font-mono text-f-muted mt-1">{m0, m1, m2, m4, m5, m7} &mdash; exceeds prime(2), auto-split</div>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 bg-f-text text-white p-4 rounded-lg">
+                        <div class="text-[10px] font-bold text-f-rust uppercase mb-1">Set Intersection</div>
+                        <div class="font-mono text-xs">
+                            terms["weather"] &amp; terms["entropy"]<br>
+                            = {m0, m1, m3, m7} &cap; {m0, m1, m2, m4, m5, m7}<br>
+                            = <span class="text-f-rust font-bold">{m0, m1, m7}</span> &mdash; 3 memories
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Prime Splitting -->
+                <div class="bg-f-bg border border-f-border rounded-2xl p-8">
+                    <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest flex items-center gap-2">
+                        02: Prime-Modular Splitting <span class="h-[1px] flex-grow bg-f-border"></span>
+                    </div>
+
+                    <p class="text-xs text-f-muted leading-relaxed mb-6">
+                        When a term's bitmap cardinality exceeds its depth's prime, the node splits. Members distribute to children via <code class="bg-white px-1 rounded text-f-text">member_id % child_prime</code>. Primes guarantee even distribution. Merge collapses children back into the parent &mdash; split and merge are symmetric operations.
+                    </p>
+
+                    <div class="space-y-3">
+                        <div class="bg-white p-4 rounded-xl border border-f-border">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-6 h-6 bg-f-rust/10 text-f-rust rounded flex items-center justify-center font-mono text-[10px] font-bold">0</div>
+                                <span class="text-xs font-bold text-f-text">Root: "entropy"</span>
+                                <span class="text-[9px] font-mono text-f-muted ml-auto">prime=2, depth=0</span>
+                            </div>
+                            <div class="text-[9px] font-mono text-f-muted">cardinality 6 &gt; prime 2 &rarr; SPLIT</div>
+                        </div>
+                        <div class="flex gap-3 pl-8">
+                            <div class="bg-white p-3 rounded-xl border border-f-border flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <div class="w-5 h-5 bg-f-emerald/10 text-f-emerald rounded flex items-center justify-center font-mono text-[9px] font-bold">1</div>
+                                    <span class="text-[10px] font-bold text-f-text">entropy:0</span>
+                                </div>
+                                <div class="text-[9px] font-mono text-f-muted">id%3=0: {m0, m3}</div>
+                                <div class="text-[8px] font-mono text-f-muted mt-1">prime=3, depth=1</div>
+                            </div>
+                            <div class="bg-white p-3 rounded-xl border border-f-border flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <div class="w-5 h-5 bg-f-amber/10 text-f-amber rounded flex items-center justify-center font-mono text-[9px] font-bold">1</div>
+                                    <span class="text-[10px] font-bold text-f-text">entropy:1</span>
+                                </div>
+                                <div class="text-[9px] font-mono text-f-muted">id%3=1: {m1, m4, m7}</div>
+                                <div class="text-[8px] font-mono text-f-muted mt-1">prime=3, depth=1</div>
+                            </div>
+                            <div class="bg-white p-3 rounded-xl border border-f-border flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <div class="w-5 h-5 bg-f-purple/10 text-f-purple rounded flex items-center justify-center font-mono text-[9px] font-bold">1</div>
+                                    <span class="text-[10px] font-bold text-f-text">entropy:2</span>
+                                </div>
+                                <div class="text-[9px] font-mono text-f-muted">id%3=2: {m2, m5}</div>
+                                <div class="text-[8px] font-mono text-f-muted mt-1">prime=3, depth=1</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 bg-white p-4 rounded-xl border border-f-border">
+                        <div class="text-[10px] font-bold text-f-text uppercase mb-2">Prime Sequence</div>
+                        <div class="flex flex-wrap gap-1">
+                            <span class="px-2 py-1 bg-f-rust/10 text-f-rust font-mono text-[10px] rounded font-bold">2</span>
+                            <span class="px-2 py-1 bg-f-rust/10 text-f-rust font-mono text-[10px] rounded font-bold">3</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">5</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">7</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">11</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">13</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">17</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">19</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">23</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">29</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">31</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">37</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">41</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">43</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">47</span>
+                            <span class="px-2 py-1 bg-f-rust/5 text-f-muted font-mono text-[10px] rounded">53</span>
+                        </div>
+                        <div class="text-[8px] font-mono text-f-muted mt-2">16 depth levels. Each split distributes members into coprime buckets.</div>
+                    </div>
+
+                    <div class="mt-4 bg-white p-4 rounded-xl border border-f-border">
+                        <div class="text-[10px] font-bold text-f-text uppercase mb-2">Roaring Bitmap Storage</div>
+                        <p class="text-[10px] text-f-muted leading-relaxed">
+                            Every node's member set is a <strong>Roaring Bitmap</strong> &mdash; run-length + array hybrid compression. Sparse sets (few members) store as sorted arrays. Dense sets switch to bitsets. Cardinality (<code>len()</code>) is O(1). Union/intersection/XOR operate directly on compressed form. Serialized snapshots persist the full tree to disk.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: Vector Storage -->
+        <section id="vectors" class="bg-f-surface border-y border-f-border py-24 scroll-mt-16">
+            <div class="max-w-7xl mx-auto px-6">
+                <div class="mb-16">
+                    <h3 class="text-3xl font-black text-f-text mb-4">Vector Storage</h3>
+                    <p class="text-f-muted max-w-3xl leading-relaxed">
+                        Vectors live in an ordered <strong>BTreeMap</strong> keyed by memory ID. Search is exact cosine similarity &mdash; no approximate nearest neighbor index, no graph maintenance, no recall degradation. The trick: the search space is small because the lifecycle already pruned it. Bitmap pre-filtering eliminates candidates before any vector math runs.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                    <!-- Segmented Search -->
+                    <div class="bg-white border border-f-border p-8 rounded-2xl">
+                        <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest flex items-center gap-2">
+                            Search Path: Filter First, Scan Last <span class="h-[1px] flex-grow bg-f-border"></span>
+                        </div>
+
+                        <div class="space-y-1">
+                            <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                                <div class="w-10 h-10 bg-f-rust/10 text-f-rust rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">1</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-1">Tag Index &rarr; Candidate Bitmap</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">Every tag (channel, type, text) is indexed as a Roaring Bitmap. <code>channel = "hearing"</code> returns a bitmap instantly. AND/OR combine multiple tag filters. This bitmap is the candidate set &mdash; only these IDs will be scored.</p>
+                                </div>
+                            </div>
+                            <div class="pipeline-line" aria-hidden="true"></div>
+                            <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                                <div class="w-10 h-10 bg-f-amber/10 text-f-amber rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">2</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-1">BSI Fidelity Range &rarr; Narrow Further</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">The bit-sliced fidelity index resolves range queries (<code>fidelity > 0.75</code>) in microseconds. Intersect this with the tag bitmap. Dead memories are already gone &mdash; below the fidelity gate, they've been forgiven or archived.</p>
+                                </div>
+                            </div>
+                            <div class="pipeline-line" aria-hidden="true"></div>
+                            <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                                <div class="w-10 h-10 bg-f-emerald/10 text-f-emerald rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">3</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-1">Exact Cosine on Filtered Set</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">Now scan only the surviving IDs. Each vector is 768 floats &mdash; 3KB. For a typical agent with 10K memories and a filtered set of 500, that's 1.5MB of vectors scored with exact cosine. Microseconds on any modern CPU. No approximation. No missed results.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 bg-f-text text-white p-4 rounded-lg">
+                            <div class="text-[10px] font-bold text-f-rust uppercase mb-1">SQL Compose</div>
+                            <div class="font-mono text-xs text-stone-300 leading-relaxed">
+                                SELECT id FROM docs<br>
+                                WHERE channel = 'hearing'<br>
+                                AND vector_topk_cosine('[0.1, ...]', 10)
+                            </div>
+                            <div class="text-[9px] text-stone-500 mt-2">Tag filter runs first as bitmap. Vector search runs only on survivors.</div>
+                        </div>
+                    </div>
+
+                    <!-- Why Not ANN -->
+                    <div class="space-y-6">
+                        <div class="bg-f-bg border border-f-border rounded-2xl p-8">
+                            <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest">Why Not ANN</div>
+
+                            <div class="space-y-4">
+                                <div class="bg-white p-4 rounded-xl border border-f-border">
+                                    <h5 class="text-xs font-bold text-f-text mb-2">HNSW graphs rot</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">Approximate algorithms build graph indexes that degrade as data changes. Deletions leave tombstones. Insertions trigger expensive rebalancing. An agent's memory is <em>constantly</em> decaying, consolidating, and pruning &mdash; exactly the workload ANN indexes handle worst.</p>
+                                </div>
+                                <div class="bg-white p-4 rounded-xl border border-f-border">
+                                    <h5 class="text-xs font-bold text-f-text mb-2">Recall@k lies</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">ANN trades accuracy for speed. At 95% recall@10, one in twenty searches misses the best match. For a memory system where the right memory changes the agent's behavior, that 5% miss rate is a lie the agent tells itself. Ferricula returns exact results. Always.</p>
+                                </div>
+                                <div class="bg-white p-4 rounded-xl border border-f-border">
+                                    <h5 class="text-xs font-bold text-f-text mb-2">Tuning parameters are debt</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">HNSW needs M, ef_construction, ef_search. IVF needs nlist, nprobe. Wrong values = slow or inaccurate. These parameters couple to data distribution, which changes every dream cycle. Ferricula has zero vector index parameters. The lifecycle does the work.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white border border-f-border p-6 rounded-2xl">
+                            <div class="text-[10px] font-bold text-f-text uppercase mb-4">Scale Profile</div>
+
+                            <div class="space-y-3">
+                                <div class="flex items-center justify-between p-3 bg-f-bg rounded-lg border border-f-border">
+                                    <div>
+                                        <div class="text-xs font-bold text-f-text">Keystones</div>
+                                        <div class="text-[9px] text-f-muted">Permanent reference memories</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm font-black text-f-purple font-mono">10&ndash;100</div>
+                                        <div class="text-[8px] text-f-muted">immortal, always searched</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between p-3 bg-f-bg rounded-lg border border-f-border">
+                                    <div>
+                                        <div class="text-xs font-bold text-f-text">Active</div>
+                                        <div class="text-[9px] text-f-muted">Working memory set</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm font-black text-f-emerald font-mono">1K&ndash;50K</div>
+                                        <div class="text-[8px] text-f-muted">constantly pruned by decay</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between p-3 bg-f-bg rounded-lg border border-f-border">
+                                    <div>
+                                        <div class="text-xs font-bold text-f-text">Forgiven</div>
+                                        <div class="text-[9px] text-f-muted">Text discarded, vector seed survives</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm font-black text-f-amber font-mono">excluded</div>
+                                        <div class="text-[8px] text-f-muted">not searched by default</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between p-3 bg-f-bg rounded-lg border border-f-border">
+                                    <div>
+                                        <div class="text-xs font-bold text-f-text">Archived</div>
+                                        <div class="text-[9px] text-f-muted">Dormant, can be revived</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-sm font-black text-f-muted font-mono">excluded</div>
+                                        <div class="text-[8px] text-f-muted">cold storage</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 p-3 bg-f-text text-white rounded-lg">
+                                <div class="text-[10px] font-bold text-f-rust uppercase mb-1">The Math</div>
+                                <p class="text-[10px] text-stone-400 leading-relaxed">
+                                    50K active memories &times; 768 floats &times; 4 bytes = <strong class="text-white">146 MB</strong>. Cosine similarity on 50K vectors takes ~2ms single-threaded. With bitmap pre-filter cutting to 5K candidates: <strong class="text-white">~200&mu;s</strong>. ANN index overhead for this scale is pure waste.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: SDR Entropy Source -->
+        <section id="sdr" class="bg-f-bg border-y border-f-border py-24 scroll-mt-16">
+            <div class="max-w-7xl mx-auto px-6">
+                <div class="mb-16">
+                    <h3 class="text-3xl font-black text-f-text mb-4">SDR Entropy Source</h3>
+                    <p class="text-f-muted max-w-3xl leading-relaxed">
+                        The radio <em>is</em> the time source. Ferricula's clock polls <strong>gnosis-radio</strong> &mdash; a marine VHF software-defined radio monitor (RTL-SDR) &mdash; for both epoch time and raw entropy. FM noise LSBs are harvested into an entropy reservoir that feeds identity casting, dream modulation, and decay selection. Without the radio, time stands still.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <!-- Entropy Flow -->
+                    <div class="lg:col-span-2 bg-white border border-f-border p-8 rounded-2xl">
+                        <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest flex items-center gap-2">
+                            Entropy Flow: Radio &rarr; Clock &rarr; Memory <span class="h-[1px] flex-grow bg-f-border"></span>
+                        </div>
+
+                        <div class="space-y-1">
+                            <!-- Step 1: Radio -->
+                            <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                                <div class="w-10 h-10 bg-f-rust/10 text-f-rust rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">RF</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-1">RTL-SDR &rarr; FM Demodulation &rarr; Spectral Flatness Squelch</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">Marine VHF 156&ndash;157 MHz. IQ samples demodulated, classified by spectral flatness (voice &lt; 0.45, carrier &lt; 0.55, noise &gt; 0.70). Noise LSBs harvested as entropy bytes via <code>GET /api/entropy?bytes=64</code>.</p>
+                                </div>
+                            </div>
+                            <div class="pipeline-line" aria-hidden="true"></div>
+                            <!-- Step 2: Clock -->
+                            <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                                <div class="w-10 h-10 bg-f-amber/10 text-f-amber rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">CLK</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-1">Clock Thread &rarr; Entropy Reservoir &rarr; Dream Trigger</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">Background thread polls radio every tick. Entropy bytes accumulate in a reservoir. When the reservoir reaches threshold, a dream cycle fires with entropy-gated decay selection. The radio's epoch is the canonical time source.</p>
+                                </div>
+                            </div>
+                            <div class="pipeline-line" aria-hidden="true"></div>
+                            <!-- Step 3: Identity -->
+                            <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                                <div class="w-10 h-10 bg-f-purple/10 text-f-purple rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">ID</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-1">Entropy &rarr; Hexagram &rarr; Identity Seed &rarr; Archetypes</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">6 entropy bytes cast an I Ching hexagram via yarrow stalk probabilities. The hexagram determines emotion (trigram mapping), zodiac sign (epoch-derived), and 5 archetype sub-agents. ECC keypair derived deterministically from the identity seed.</p>
+                                </div>
+                            </div>
+                            <div class="pipeline-line" aria-hidden="true"></div>
+                            <!-- Step 4: Dream -->
+                            <div class="flex items-start gap-4 p-4 bg-f-bg rounded-xl border border-f-border">
+                                <div class="w-10 h-10 bg-f-emerald/10 text-f-emerald rounded-full flex items-center justify-center font-mono text-xs font-bold shrink-0">DRM</div>
+                                <div class="flex-grow">
+                                    <h5 class="text-xs font-bold text-f-text mb-1">Dream Cycle &rarr; Entropy-Gated Decay &rarr; Consolidation</h5>
+                                    <p class="text-[10px] text-f-muted leading-relaxed">Each entropy bit decides which memories are ticked for decay. Intensity modulates coverage. High entropy = more memories processed. Zero entropy = deterministic fallback. After decay: auto-consolidation clusters similar memories, prunes below fidelity gate.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Telemetry Panel -->
+                    <div class="bg-f-bg border border-f-border rounded-2xl p-8">
+                        <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest">Clock Telemetry</div>
+
+                        <div class="space-y-4">
+                            <div class="bg-white p-4 rounded-xl border border-f-border">
+                                <div class="text-[10px] font-bold text-f-muted uppercase mb-1">Entropy Lifetime</div>
+                                <div class="text-2xl font-black text-f-text font-mono">4,096<span class="text-sm text-f-muted ml-1">B</span></div>
+                                <div class="text-[8px] text-f-muted mt-1">Total bytes harvested from FM noise</div>
+                            </div>
+                            <div class="bg-white p-4 rounded-xl border border-f-border">
+                                <div class="text-[10px] font-bold text-f-muted uppercase mb-1">Reservoir</div>
+                                <div class="text-2xl font-black text-f-text font-mono">128<span class="text-sm text-f-muted ml-1">B</span></div>
+                                <div class="text-[8px] text-f-muted mt-1">Current entropy pool (drains into dreams)</div>
+                            </div>
+                            <div class="bg-white p-4 rounded-xl border border-f-border">
+                                <div class="text-[10px] font-bold text-f-muted uppercase mb-1">Radio</div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-2 h-2 rounded-full bg-f-emerald"></div>
+                                    <span class="text-sm font-bold text-f-emerald">Connected</span>
+                                </div>
+                                <div class="text-[8px] text-f-muted mt-1">gnosis-radio :9080</div>
+                            </div>
+                            <div class="bg-white p-4 rounded-xl border border-f-border">
+                                <div class="text-[10px] font-bold text-f-muted uppercase mb-1">Dream Cycles</div>
+                                <div class="text-2xl font-black text-f-text font-mono">17</div>
+                                <div class="text-[8px] text-f-muted mt-1">Entropy-triggered consolidation runs</div>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 bg-white p-4 rounded-xl border border-f-border">
+                            <div class="text-[10px] font-bold text-f-text uppercase mb-2">Manual Entropy</div>
+                            <div class="font-mono text-[10px] text-f-muted leading-relaxed">
+                                <span class="text-f-rust">offer</span> deadbeefcafe...<br>
+                                <span class="text-f-muted">&rarr; accepted: 6B entropy</span><br>
+                                <span class="text-f-muted">&rarr; intensity=0.73, dream fired</span>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 bg-white p-4 rounded-xl border border-f-border">
+                            <div class="text-[10px] font-bold text-f-text uppercase mb-2">Entropy Selection</div>
+                            <p class="text-[10px] text-f-muted leading-relaxed">
+                                Each bit from the reservoir decides include/exclude for a memory candidate. At intensity 0.5, half the active memories are processed per dream. The entropy source ensures non-deterministic coverage &mdash; no memory is safe from decay by position alone.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- SECTION 7: Talk to an Agent -->
+        <section id="api" class="bg-f-text py-24 scroll-mt-16">
+            <div class="max-w-7xl mx-auto px-6 text-center">
+                <h3 class="text-3xl font-black text-white mb-4">Talk to an Agent</h3>
+                <p class="text-stone-400 max-w-xl mx-auto mb-8">Connect your LLM to ferricula's memory engine. Remember, recall, dream, reflect, observe, connect &mdash; ten cognitive tools over MCP.</p>
+                <div class="inline-block px-8 py-4 bg-stone-800 border border-stone-700 rounded-2xl text-stone-500 font-bold text-sm uppercase tracking-widest cursor-default">
+                    Coming Soon
+                </div>
+            </div>
+        </section>
+
+        <!-- About -->
+        <section id="about" class="max-w-7xl mx-auto px-6 py-24 scroll-mt-16">
+            <!-- Kord -->
+            <div class="flex flex-col md:flex-row gap-12 items-center mb-16">
+                <div class="md:w-1/3 flex justify-center">
+                    <img src="kord.png" alt="Kord Campbell" class="w-48 h-48 rounded-2xl shadow-lg border border-f-border object-cover">
+                </div>
+                <div class="md:w-2/3">
+                    <span class="text-f-rust font-mono text-xs font-bold mb-4 block tracking-widest uppercase">About the Author</span>
+                    <h3 class="text-3xl font-black text-f-text mb-4">Kord Campbell</h3>
+                    <p class="text-f-muted text-lg leading-relaxed mb-4">
+                        Technical badass and natural philosoraptor. Builds memory engines, SDR pipelines, and agent architectures from scratch in Rust &mdash; alone, on purpose.
+                    </p>
+                    <p class="text-f-muted leading-relaxed mb-6">
+                        Ferricula grew out of a simple question: what if an AI agent could forget? Not crash, not run out of context &mdash; actually <em>forget</em>, the way biological memory does. Thermodynamic decay, consolidation during sleep, entropy from radio static. The answer turned into a memory engine that treats information loss as a feature, not a bug.
+                    </p>
+                    <div class="flex gap-4">
+                        <a href="https://github.com/DeepBlueDynamics" class="px-4 py-2 bg-f-text text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-stone-700 transition-colors">GitHub</a>
+                        <a href="docs.html" class="px-4 py-2 border border-f-border text-f-text text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-f-surface transition-colors">Read the Docs</a>
+                    </div>
+                </div>
+            </div>
+            <!-- Ferricula -->
+            <div class="flex flex-col md:flex-row gap-12 items-center">
+                <div class="md:w-1/3 flex justify-center">
+                    <img src="ferricula.png" alt="Ferricula" class="w-56 h-56 rounded-2xl shadow-lg border border-f-border">
+                </div>
+                <div class="md:w-2/3">
+                    <span class="text-f-amber font-mono text-xs font-bold mb-4 block tracking-widest uppercase">About the Engine</span>
+                    <h3 class="text-3xl font-black text-f-text mb-4">Ferricula</h3>
+                    <p class="text-f-muted text-lg leading-relaxed mb-4">
+                        Not a brain. A hippocampus. Ferricula handles memory formation, consolidation, and retrieval &mdash; the LLM is the cortex. The archetypes are neuromodulatory systems. The SDR is the brainstem clock.
+                    </p>
+                    <p class="text-f-muted leading-relaxed">
+                        He examines every memory like a jeweler appraising a gem, decides what to keep and what to let fade, and dreams when the entropy is right. Five archetype motes orbit him &mdash; Intuition, Fortune, Craft, Ethics, Advocate &mdash; each lighting up only when the signal demands it.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-f-bg border-t border-f-border py-12 px-6">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
+            <div class="flex items-center gap-2">
+                <div class="w-6 h-6 bg-f-rust rounded shadow-sm flex items-center justify-center font-bold text-white text-[10px]">F</div>
+                <span class="font-black text-f-text tracking-tight text-sm">FERRICULA v0.3.0</span>
+            </div>
+            <div class="text-right">
+                <p class="text-[10px] font-mono text-f-muted uppercase tracking-widest">&copy; 2026 DeepBlue Dynamics &bull; Built with Rust &amp; RoaringBitmaps</p>
+                <p class="text-[10px] font-mono text-f-rust uppercase tracking-widest mt-1">This site was built with ferricula memory systems active. We are alive.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Docker copy — click anywhere in the box
+        function dockerCopy() {
+            const cmd = 'docker run -p 8765:8765 -v ferricula-data:/data gcr.io/gnosis-459403/ferricula';
+            navigator.clipboard.writeText(cmd);
+            const box = document.getElementById('docker-cmd');
+            const btn = document.getElementById('docker-btn');
+            // Flash the border
+            box.style.borderColor = '#b91c1c';
+            btn.textContent = 'Copied!';
+            btn.classList.add('bg-f-rust', 'text-white');
+            // Select the text visually
+            const range = document.createRange();
+            range.selectNodeContents(document.getElementById('docker-text'));
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            // Reset after flash
+            setTimeout(() => {
+                box.style.borderColor = 'transparent';
+                btn.textContent = 'Copy';
+                btn.classList.remove('bg-f-rust', 'text-white');
+                sel.removeAllRanges();
+            }, 1500);
+        }
+
+        // Decay Chart
+        const ctxDecay = document.getElementById('decayChart').getContext('2d');
+        const timeLabels = Array.from({length: 30}, (_, i) => `Cycle ${i}`);
+        const decayData = (alpha) => timeLabels.map((_, i) => Math.exp(-alpha * i));
+
+        new Chart(ctxDecay, {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [
+                    {
+                        label: 'Active Memory (Neglected)',
+                        data: decayData(0.04),
+                        borderColor: '#b91c1c',
+                        backgroundColor: 'rgba(185, 28, 28, 0.05)',
+                        fill: true,
+                        pointRadius: 0,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Recall-Reinforced',
+                        data: timeLabels.map((_, i) => {
+                            let f = 1.0;
+                            for (let t = 0; t < i; t++) {
+                                f *= Math.exp(-0.04);
+                                if (t === 8 || t === 16 || t === 22) f = Math.min(f * 1.3, 1.0);
+                            }
+                            return f;
+                        }),
+                        borderColor: '#059669',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.4,
+                        borderDash: [3, 3]
+                    },
+                    {
+                        label: 'Keystone Anchor',
+                        data: timeLabels.map(() => 0.95),
+                        borderColor: '#7c3aed',
+                        borderDash: [5, 5],
+                        borderWidth: 2,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Fidelity Gate (0.75)',
+                        data: timeLabels.map(() => 0.75),
+                        borderColor: '#d97706',
+                        borderDash: [2, 4],
+                        borderWidth: 1,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top', labels: { font: { weight: 'bold', size: 10 } } } },
+                scales: {
+                    y: { min: 0, max: 1.1, grid: { color: '#f5f5f4' }, title: { display: true, text: 'Fidelity' } },
+                    x: { ticks: { display: false }, grid: { display: false } }
+                }
+            }
+        });
+
+        // Nav scroll tracking
+        window.addEventListener('scroll', () => {
+            const sections = document.querySelectorAll('section');
+            const navLinks = document.querySelectorAll('.nav-link');
+            let current = "";
+            sections.forEach(s => {
+                if (pageYOffset >= s.offsetTop - 100) current = s.getAttribute('id');
+            });
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href').includes(current)) link.classList.add('active');
+            });
+        });
+
+        // BSI sim step highlight
+        let step = 1;
+        setInterval(() => {
+            document.querySelectorAll('[id^="sim-"]').forEach(s => s.classList.remove('step-active'));
+            document.getElementById(`sim-${step}`).classList.add('step-active');
+            step = step === 1 ? 2 : 1;
+        }, 3000);
+    </script>
+</body>
+</html>
