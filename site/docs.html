@@ -81,6 +81,7 @@
                 <a href="#lifecycle" class="nav-link active pb-1">Lifecycle</a>
                 <a href="#agents" class="nav-link pb-1">Agents</a>
                 <a href="#tools" class="nav-link pb-1">Tools</a>
+                <a href="#query" class="nav-link pb-1">Query</a>
                 <a href="#config" class="nav-link pb-1">Configuration</a>
                 <a href="#faq" class="nav-link pb-1">Q&amp;A</a>
                 <a href="index.html" class="nav-link pb-1">Architecture</a>
@@ -105,7 +106,7 @@
                 <div class="space-y-3">
                     <div class="flex items-center justify-between p-3 bg-f-bg rounded-lg border border-f-border">
                         <div>
-                            <a href="https://radio.nuts.services" target="_blank" class="text-sm font-bold text-f-text hover:text-f-rust transition-colors">gnosis-radio</a>
+                            <a href="#" onclick="showRadioModal(event)" class="text-sm font-bold text-f-text hover:text-f-rust transition-colors">gnosis-radio</a>
                             <p class="text-[10px] text-f-muted mt-0.5">SDR entropy source. Marine VHF monitor that harvests FM noise as entropy for dream cycles and identity casting.</p>
                         </div>
                         <div class="text-right shrink-0 ml-4">
@@ -113,14 +114,23 @@
                             <div class="text-[8px] text-f-muted">one-time license</div>
                         </div>
                     </div>
-                    <div class="flex items-center justify-between p-3 bg-f-bg rounded-lg border border-f-border">
-                        <div>
-                            <span class="text-sm font-bold text-f-text">gnosis-chunk</span>
-                            <p class="text-[10px] text-f-muted mt-0.5">Embedding service. Converts text to 768d vectors (gtr-t5-base) and inverts vectors back to text (vec2text). Required for remember, recall, reflect, and observe.</p>
+                    <div class="p-3 bg-f-bg rounded-lg border border-f-border">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <span class="text-sm font-bold text-f-text">gnosis-chunk</span>
+                                <p class="text-[10px] text-f-muted mt-0.5">Embedding service. Converts text to 768d vectors (gtr-t5-base) and inverts vectors back to text (vec2text). Required for remember, recall, reflect, and observe.</p>
+                            </div>
+                            <div class="text-right shrink-0 ml-4">
+                                <div class="text-sm font-black text-f-muted font-mono">required</div>
+                                <div class="text-[8px] text-f-muted">separate container</div>
+                            </div>
                         </div>
-                        <div class="text-right shrink-0 ml-4">
-                            <div class="text-sm font-black text-f-muted font-mono">required</div>
-                            <div class="text-[8px] text-f-muted">separate container</div>
+                        <div class="mt-3 bg-white border border-f-border rounded-lg p-3">
+                            <div class="text-[9px] font-bold text-f-muted uppercase tracking-widest mb-2">Install</div>
+                            <pre class="text-[11px] font-mono text-f-text leading-relaxed"><code>docker pull gcr.io/gnosis-459403/gnosis-chunk
+docker run -d --name chonk -p 8080:8080 \
+  gcr.io/gnosis-459403/gnosis-chunk</code></pre>
+                            <p class="text-[9px] text-f-muted mt-2">Verify: <code class="bg-f-bg px-1 py-0.5 rounded text-[9px]">curl localhost:8080/health</code></p>
                         </div>
                     </div>
                 </div>
@@ -575,8 +585,107 @@
             </div>
         </section>
 
+        <!-- SECTION: Query Language -->
+        <section id="query" class="max-w-7xl mx-auto px-6 py-24 scroll-mt-16">
+            <div class="mb-16">
+                <h3 class="text-3xl font-black text-f-text mb-4">Query Language</h3>
+                <p class="text-f-muted max-w-3xl leading-relaxed">
+                    Ferricula uses a SQL subset for memory queries. You can write raw SQL via the <code>query</code> tool, or just type natural language &mdash; the built-in query planner rewrites it for you. When <code>AGENT_KEY</code> is set, an AI agent (Claude Haiku) translates freeform questions into executable SQL. Without a key, rule-based rewriting handles common patterns.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+                <!-- SQL Reference -->
+                <div class="bg-white border border-f-border p-8 rounded-2xl">
+                    <div class="text-[10px] font-bold text-f-rust uppercase mb-6 tracking-widest">SQL Reference</div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <div class="text-xs font-bold text-f-text mb-2">Table</div>
+                            <p class="text-[10px] text-f-muted mb-2">All queries run against a single virtual table.</p>
+                            <pre class="text-[11px] font-mono bg-f-bg border border-f-border rounded-lg p-3"><code>SELECT id FROM docs WHERE ...</code></pre>
+                        </div>
+
+                        <div>
+                            <div class="text-xs font-bold text-f-text mb-2">Tag Filters</div>
+                            <p class="text-[10px] text-f-muted mb-2">Filter by any tag field stored with the memory.</p>
+                            <pre class="text-[11px] font-mono bg-f-bg border border-f-border rounded-lg p-3"><code>SELECT id FROM docs WHERE channel = 'hearing'
+SELECT id FROM docs WHERE type = 'identity_anchor'
+SELECT id FROM docs WHERE channel = 'seeing' AND type = 'file'</code></pre>
+                        </div>
+
+                        <div>
+                            <div class="text-xs font-bold text-f-text mb-2">Boolean Operators</div>
+                            <pre class="text-[11px] font-mono bg-f-bg border border-f-border rounded-lg p-3"><code>AND, OR, NOT</code></pre>
+                        </div>
+
+                        <div>
+                            <div class="text-xs font-bold text-f-text mb-2">Set Operations</div>
+                            <p class="text-[10px] text-f-muted mb-2">Combine two queries using bitmap set algebra.</p>
+                            <pre class="text-[11px] font-mono bg-f-bg border border-f-border rounded-lg p-3"><code>SELECT id FROM docs WHERE channel = 'hearing'
+INTERSECT
+SELECT id FROM docs WHERE type = 'file'
+
+UNION, INTERSECT, EXCEPT</code></pre>
+                        </div>
+
+                        <div>
+                            <div class="text-xs font-bold text-f-text mb-2">Vector Search</div>
+                            <p class="text-[10px] text-f-muted mb-2">Top-k nearest neighbors. Three distance metrics. Vector is a bracketed float array.</p>
+                            <pre class="text-[11px] font-mono bg-f-bg border border-f-border rounded-lg p-3"><code>vector_topk_cosine('[0.1,0.2,...]', 10)
+vector_topk_l2('[0.1,0.2,...]', 5)
+vector_topk_jaccard('[0.1,0.2,...]', 10)</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Query Planner -->
+                <div class="bg-white border border-f-border p-8 rounded-2xl">
+                    <div class="text-[10px] font-bold text-f-purple uppercase mb-6 tracking-widest">Query Planner</div>
+
+                    <p class="text-xs text-f-muted leading-relaxed mb-6">The planner sits between you and the SQL engine. It accepts freeform text and rewrites it into executable SQL. Two modes, automatic fallback.</p>
+
+                    <div class="space-y-4">
+                        <div class="p-4 bg-f-purple/5 border border-f-purple/20 rounded-lg">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="px-2 py-0.5 bg-f-purple/10 text-f-purple text-[9px] font-bold rounded uppercase">AI Mode</div>
+                                <span class="text-[9px] font-mono text-f-muted">AGENT_KEY required</span>
+                            </div>
+                            <p class="text-[10px] text-f-muted leading-relaxed mb-3">When <code>AGENT_KEY</code> is set, freeform queries are sent to Claude Haiku for rewriting. The LLM knows the full SQL syntax and translates natural language into precise queries.</p>
+                            <pre class="text-[11px] font-mono bg-white border border-f-border rounded-lg p-3"><code>"memories about electromagnetism from last week"
+  &darr;
+SELECT id FROM docs WHERE
+  vector_topk_cosine('[...]', 10)
+  AND channel = 'hearing'</code></pre>
+                        </div>
+
+                        <div class="p-4 bg-f-bg border border-f-border rounded-lg">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="px-2 py-0.5 bg-f-muted/10 text-f-muted text-[9px] font-bold rounded uppercase">Rule-Based Mode</div>
+                                <span class="text-[9px] font-mono text-f-muted">no key needed</span>
+                            </div>
+                            <p class="text-[10px] text-f-muted leading-relaxed mb-3">Without a key (or if the LLM fails), pattern matching handles common cases:</p>
+                            <div class="space-y-2 text-[10px] font-mono text-f-muted">
+                                <div class="flex gap-2"><span class="text-f-text shrink-0">SQL passthrough</span> <span class="text-f-border">&rarr;</span> <span>SELECT... passed as-is</span></div>
+                                <div class="flex gap-2"><span class="text-f-text shrink-0">Vector literal</span> <span class="text-f-border">&rarr;</span> <span>[0.1,0.2] &rarr; vector_topk_cosine</span></div>
+                                <div class="flex gap-2"><span class="text-f-text shrink-0">Tag pattern</span> <span class="text-f-border">&rarr;</span> <span>field = 'val' &rarr; WHERE clause</span></div>
+                                <div class="flex gap-2"><span class="text-f-text shrink-0">Freeform text</span> <span class="text-f-border">&rarr;</span> <span>exact match on text tag</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 p-4 bg-f-text text-white rounded-lg">
+                        <div class="text-[10px] font-bold text-f-amber uppercase mb-1">Note</div>
+                        <div class="text-[10px] text-stone-400">
+                            The <code>recall</code> tool on the cognitive surface handles vector embedding automatically &mdash; your text is embedded via chonk and searched as a cosine top-k query. The <code>query</code> tool on the system surface is for raw SQL when you need precise control.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- SECTION: Configuration -->
-        <section id="config" class="max-w-7xl mx-auto px-6 py-24 scroll-mt-16">
+        <section id="config" class="bg-f-surface border-y border-f-border py-24 scroll-mt-16">
             <div class="mb-16">
                 <h3 class="text-3xl font-black text-f-text mb-4">Configuration</h3>
                 <p class="text-f-muted max-w-3xl leading-relaxed">
@@ -672,7 +781,7 @@ RADIO_URL=http://localhost:9080</div>
                                     <span class="text-xs font-bold text-f-text font-mono">RADIO_URL</span>
                                     <span class="text-[9px] text-f-muted">default: http://localhost:9080</span>
                                 </div>
-                                <p class="text-[10px] text-f-muted mt-1">SDR entropy source (<a href="https://radio.nuts.services" target="_blank" class="text-f-rust hover:underline">gnosis-radio</a>). Optional. Without it, dreams are clock-triggered only.</p>
+                                <p class="text-[10px] text-f-muted mt-1">SDR entropy source (<a href="#" onclick="showRadioModal(event)" class="text-f-rust hover:underline">gnosis-radio</a>). Optional. Without it, dreams are clock-triggered only.</p>
                             </div>
                             <div class="p-3 bg-f-bg rounded-lg border border-f-border">
                                 <div class="flex items-center justify-between">
@@ -790,7 +899,7 @@ RADIO_URL=http://localhost:9080</div>
                         <span class="text-f-muted group-open:rotate-45 transition-transform text-xl">+</span>
                     </summary>
                     <div class="px-6 pb-5 text-f-muted leading-relaxed border-t border-f-border pt-4">
-                        No. Ferricula runs on CPU. Embedding is handled by <a href="https://github.com/DeepBlueDynamics/gnosis-chunk" class="text-f-rust hover:underline">gnosis-chunk</a> (ONNX runtime, also CPU &mdash; optionally GPU for other supported embedding models). Vec2text inversion uses a T5 model that fits comfortably on CPU. The only optional hardware is an RTL-SDR dongle for radio entropy via <a href="https://radio.nuts.services" class="text-f-rust hover:underline">gnosis-radio</a>.
+                        No. Ferricula runs on CPU. Embedding is handled by <a href="https://github.com/DeepBlueDynamics/gnosis-chunk" class="text-f-rust hover:underline">gnosis-chunk</a> (ONNX runtime, also CPU &mdash; optionally GPU for other supported embedding models). Vec2text inversion uses a T5 model that fits comfortably on CPU. The only optional hardware is an RTL-SDR dongle for radio entropy via <a href="#" onclick="showRadioModal(event)" class="text-f-rust hover:underline">gnosis-radio</a>.
                     </div>
                 </details>
 
@@ -852,6 +961,27 @@ RADIO_URL=http://localhost:9080</div>
                 if (href && href.includes(current)) link.classList.add('active');
             });
         });
+
+        // gnosis-radio launching soon modal
+        function showRadioModal(e) {
+            e.preventDefault();
+            document.getElementById('radioModal').classList.remove('hidden');
+        }
+        function hideRadioModal() {
+            document.getElementById('radioModal').classList.add('hidden');
+        }
     </script>
+
+    <!-- gnosis-radio launching soon modal -->
+    <div id="radioModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm" onclick="if(event.target===this)hideRadioModal()">
+        <div class="bg-white rounded-2xl border border-f-border shadow-2xl p-8 max-w-sm mx-4 text-center">
+            <div class="w-12 h-12 bg-f-rust/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg class="w-6 h-6 text-f-rust" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.14 0M1.394 9.393c5.857-5.858 15.355-5.858 21.213 0"/></svg>
+            </div>
+            <h3 class="text-lg font-black text-f-text mb-2">gnosis-radio</h3>
+            <p class="text-sm text-f-muted leading-relaxed mb-6">Marine VHF SDR entropy source for ferricula dream cycles and identity casting. Launching soon.</p>
+            <button onclick="hideRadioModal()" class="px-5 py-2 bg-f-rust text-white text-xs font-bold uppercase tracking-widest rounded-lg hover:bg-red-800 transition-colors">Got it</button>
+        </div>
+    </div>
 </body>
 </html>

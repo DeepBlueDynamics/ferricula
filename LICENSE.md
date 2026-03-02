@@ -44,6 +44,15 @@ Default corporate restrictions (free tier):
 
 **Commercial licenses** release specific restrictions in exchange for payment. The pricing structure reflects the cost of oversight and safety you're bypassing.
 
+#### Commercial License Tiers
+
+| Tier | Fee | Includes |
+|------|-----|----------|
+| **Runtime** | Contact licensor | Production deployment beyond 3 instances |
+| **Source Access / Due Diligence** | $3,000,000 USD | Access to source code for audit, review, or evaluation purposes. Includes a 90-day review window. Source code remains confidential and may not be copied, retained, or disclosed. Payment due before access is granted. |
+
+**Source Access** applies to any corporate request to inspect, audit, reverse-engineer, decompile, or otherwise obtain access to the Software's source code, whether for acquisition due diligence, competitive analysis, security audit, or any other purpose. By executing or deploying the Software, Corporate Entities acknowledge this fee schedule and agree it represents a reasonable commercial term, not a penalty.
+
 ### For Military & Government Entities (CONDITIONAL, NON-TRANSFERABLE)
 
 Permitted only under stringent conditions:
@@ -166,6 +175,7 @@ By using the Software, you:
 - Acknowledge you have read and agree to be bound by all terms
 - Consent that this License constitutes a legally binding contract
 - Agree that continued use constitutes ongoing acceptance
+- Acknowledge the Source Access / Due Diligence fee schedule and agree it is a reasonable commercial term
 - Waive defenses based on lack of notice or opportunity to review
 
 ---

@@ -26,6 +26,7 @@ import sys
 import threading
 import os
 import re
+import time
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -173,6 +174,41 @@ class ChonkClient:
             return False
 
 
+# ── SeedJournal ──────────────────────────────────────────────────────────
+
+class SeedJournal:
+    """Append-only JSONL journal for replaying memories into a fresh instance."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def append(self, op: str, **kwargs):
+        """Serialize one seed line and append to the journal."""
+        entry = {"op": op, "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **kwargs}
+        with open(self.path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def read_all(self) -> list[dict]:
+        """Read all seed entries."""
+        if not self.path.exists():
+            return []
+        entries = []
+        with open(self.path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        return entries
+
+    def exists(self) -> bool:
+        """True if journal file exists and has content."""
+        return self.path.exists() and self.path.stat().st_size > 0
+
+
 # ── IdAllocator ───────────────────────────────────────────────────────────
 
 class IdAllocator:
@@ -314,6 +350,9 @@ _repl: Optional[ReplProcess] = None
 _http_client: Optional[HttpClient] = None
 _chonk: Optional[ChonkClient] = None
 _ids: Optional[IdAllocator] = None
+_journal: Optional[SeedJournal] = None
+_restored: bool = False
+_replaying: bool = False  # suppress journaling during seed replay
 
 
 def _use_http() -> bool:
@@ -349,6 +388,81 @@ def _get_ids() -> IdAllocator:
     if _ids is None:
         _ids = IdAllocator(_get_repl())
     return _ids
+
+
+def _get_journal() -> SeedJournal:
+    global _journal
+    if _journal is None:
+        seed_path = os.environ.get("FERRICULA_SEEDS")
+        if seed_path:
+            _journal = SeedJournal(Path(seed_path))
+        else:
+            _journal = SeedJournal(Path(_data_dir) / "seeds.jsonl")
+    return _journal
+
+
+def _restore_if_empty():
+    """On first call, check if ferricula is empty and replay seeds if so."""
+    global _restored
+    if _restored:
+        return
+    _restored = True
+
+    journal = _get_journal()
+    if not journal.exists():
+        return
+
+    # Check current memory count
+    try:
+        if _use_http():
+            raw = _get_http().get("status")
+        else:
+            raw = _get_repl().send("status")
+        # Look for rows=0 or memories=0 in status output
+        rows_match = re.search(r"rows=(\d+)", raw)
+        if rows_match and int(rows_match.group(1)) > 0:
+            return  # ferricula already has memories, skip
+    except Exception:
+        return  # can't determine state, don't replay
+
+    seeds = journal.read_all()
+    if not seeds:
+        return
+
+    global _replaying
+    _replaying = True
+    restored = 0
+    for seed in seeds:
+        op = seed.get("op")
+        try:
+            if op == "remember":
+                ferricula_remember(
+                    text=seed["text"],
+                    channel=seed.get("channel", "hearing"),
+                    emotion=seed.get("emotion"),
+                    importance=seed.get("importance", 0.0),
+                    keystone=seed.get("keystone", False),
+                )
+                restored += 1
+            elif op == "reflect":
+                ferricula_reflect(
+                    thought=seed["text"],
+                    importance=seed.get("importance", 0.0),
+                )
+                restored += 1
+            elif op == "observe":
+                ferricula_observe(
+                    path=seed["path"],
+                    summary=seed.get("summary"),
+                )
+                restored += 1
+        except Exception:
+            continue  # skip bad seeds, keep going
+
+    _replaying = False
+
+    if restored:
+        print(f"restored {restored} memories from seed journal", file=sys.stderr)
 
 
 def _invert_recall_results(raw: str) -> str:
@@ -436,6 +550,8 @@ def ferricula_remember(
         importance: Initial importance score (0.0 default).
         keystone: If true, memory is immune to decay.
     """
+    _restore_if_empty()
+
     if channel not in CHANNELS:
         return f"error: unknown channel '{channel}'. Use: {', '.join(CHANNELS)}"
 
@@ -449,9 +565,6 @@ def ferricula_remember(
     if _use_http():
         http = _get_http()
         # HTTP mode: POST to /remember with full JSON
-        mid = int(json.loads(http.get("status")).get("result", "").split("rows=")[1].split("\n")[0]) + 1 if False else 0
-        # We need an ID — derive from status or use timestamp
-        import time
         mid = int(time.time() * 1000) % (2**31)
         row = {
             "id": mid,
@@ -466,6 +579,9 @@ def ferricula_remember(
         if keystone:
             row["keystone"] = True
         result = http.post("remember", json.dumps(row))
+        if not _replaying:
+            _get_journal().append("remember", text=text, channel=channel,
+                                  emotion=emotion, importance=importance, keystone=keystone)
         return f"remembered id={mid} channel={channel} alpha={profile['alpha']} | {result}"
 
     # Subprocess mode
@@ -488,6 +604,9 @@ def ferricula_remember(
         row["keystone"] = True
 
     result = _get_repl().send(f"remember {json.dumps(row)}")
+    if not _replaying:
+        _get_journal().append("remember", text=text, channel=channel,
+                              emotion=emotion, importance=importance, keystone=keystone)
     return f"remembered id={mid} channel={channel} alpha={profile['alpha']} | {result}"
 
 
@@ -500,6 +619,8 @@ def ferricula_recall(query: str) -> str:
     Args:
         query: Search text or SQL query.
     """
+    _restore_if_empty()
+
     if _use_http():
         http = _get_http()
         chonk = _get_chonk()
@@ -584,6 +705,8 @@ def ferricula_inspect(id: int) -> str:
     Args:
         id: Memory ID to inspect.
     """
+    _restore_if_empty()
+
     if _use_http():
         return _get_http().get(f"inspect/{id}")
 
@@ -618,6 +741,8 @@ def ferricula_observe(path: str, summary: Optional[str] = None) -> str:
         path: File path to observe.
         summary: Optional description of the file. Uses filename if omitted.
     """
+    _restore_if_empty()
+
     chonk = _get_chonk()
     if not chonk.available():
         return "error: chonk (gnosis-chunk) not reachable on localhost:8080"
@@ -641,6 +766,8 @@ def ferricula_observe(path: str, summary: Optional[str] = None) -> str:
     }
 
     result = _get_repl().send(f"remember {json.dumps(row)}")
+    if not _replaying:
+        _get_journal().append("observe", path=path, summary=summary)
     return f"observed id={mid} path={path} keystone=true | {result}"
 
 
@@ -655,6 +782,8 @@ def ferricula_reflect(thought: str, importance: float = 0.0) -> str:
         thought: The thought or internal reflection to record.
         importance: Initial importance score (0.0 default).
     """
+    _restore_if_empty()
+
     chonk = _get_chonk()
     if not chonk.available():
         return "error: chonk (gnosis-chunk) not reachable on localhost:8080"
@@ -676,6 +805,8 @@ def ferricula_reflect(thought: str, importance: float = 0.0) -> str:
         row["importance"] = importance
 
     result = _get_repl().send(f"remember {json.dumps(row)}")
+    if not _replaying:
+        _get_journal().append("reflect", text=thought, importance=importance)
     return f"reflected id={mid} channel=thinking alpha={profile['alpha']} | {result}"
 
 
