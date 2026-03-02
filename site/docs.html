@@ -682,6 +682,41 @@ SELECT id FROM docs WHERE
                     </div>
                 </div>
             </div>
+
+            <!-- Interactive Query Writer -->
+            <div class="bg-white border border-f-border rounded-2xl p-8">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="w-10 h-10 bg-f-purple/10 rounded-full flex items-center justify-center">
+                        <svg class="w-5 h-5 text-f-purple" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                    </div>
+                    <div>
+                        <h4 class="text-sm font-bold text-f-text">Query Writer</h4>
+                        <p class="text-[10px] text-f-muted">Describe what you want to find. Returns ferricula SQL.</p>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <div class="flex gap-2 mb-3">
+                        <input type="password" id="qwKey" placeholder="Anthropic API key (sk-ant-...)" class="flex-1 text-xs font-mono bg-f-bg border border-f-border rounded-lg px-3 py-2 focus:outline-none focus:border-f-purple">
+                        <button onclick="queryWrite()" id="qwBtn" class="px-4 py-2 bg-f-purple text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-purple-700 transition-colors">Write</button>
+                    </div>
+                    <textarea id="qwInput" rows="2" placeholder="e.g. find all hearing memories about electromagnetism" class="w-full text-xs font-mono bg-f-bg border border-f-border rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-f-purple"></textarea>
+                </div>
+
+                <div id="qwOutput" class="hidden">
+                    <div class="text-[9px] font-bold text-f-muted uppercase tracking-widest mb-2">Output</div>
+                    <pre id="qwSql" class="text-[11px] font-mono bg-f-text text-green-400 rounded-lg p-4 overflow-x-auto"></pre>
+                </div>
+
+                <div id="qwError" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-[10px] text-red-700"></div>
+
+                <div class="mt-4 flex flex-wrap gap-2">
+                    <button onclick="qwExample(this)" class="px-3 py-1 text-[9px] font-mono bg-f-bg border border-f-border rounded-full hover:border-f-purple transition-colors">memories about dreams</button>
+                    <button onclick="qwExample(this)" class="px-3 py-1 text-[9px] font-mono bg-f-bg border border-f-border rounded-full hover:border-f-purple transition-colors">all file observations</button>
+                    <button onclick="qwExample(this)" class="px-3 py-1 text-[9px] font-mono bg-f-bg border border-f-border rounded-full hover:border-f-purple transition-colors">hearing channel, top 5 by vector similarity</button>
+                    <button onclick="qwExample(this)" class="px-3 py-1 text-[9px] font-mono bg-f-bg border border-f-border rounded-full hover:border-f-purple transition-colors">keystones that mention identity</button>
+                </div>
+            </div>
         </section>
 
         <!-- SECTION: Configuration -->
@@ -960,6 +995,80 @@ RADIO_URL=http://localhost:9080</div>
                 const href = link.getAttribute('href');
                 if (href && href.includes(current)) link.classList.add('active');
             });
+        });
+
+        // Query Writer
+        const QW_SYSTEM = `You rewrite freeform text into ferricula SQL queries.
+Available syntax:
+  SELECT id FROM docs WHERE field = 'value'
+  AND, OR, NOT boolean operators
+  UNION, INTERSECT, EXCEPT set operations
+  vector_topk_cosine('[float,float,...]', k) — cosine similarity top-k
+  vector_topk_l2('[float,float,...]', k) — L2 distance top-k
+  vector_topk_jaccard('[float,float,...]', k) — Jaccard top-k
+
+Tag fields: text, channel (hearing/seeing/thinking), type, path, agent_id
+The only table is "docs".
+
+Respond with ONLY the SQL query. No explanation. No markdown fences. Just SQL.
+If the user asks for vector similarity but provides text (not a vector), use a placeholder: vector_topk_cosine('<embed:their text>', k) to show where the embedding would go.`;
+
+        async function queryWrite() {
+            const key = document.getElementById('qwKey').value.trim();
+            const input = document.getElementById('qwInput').value.trim();
+            const btn = document.getElementById('qwBtn');
+            const output = document.getElementById('qwOutput');
+            const sql = document.getElementById('qwSql');
+            const err = document.getElementById('qwError');
+
+            err.classList.add('hidden');
+            if (!key) { err.textContent = 'API key required'; err.classList.remove('hidden'); return; }
+            if (!input) { err.textContent = 'Describe what you want to query'; err.classList.remove('hidden'); return; }
+
+            btn.textContent = '...';
+            btn.disabled = true;
+
+            try {
+                const resp = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': key,
+                        'anthropic-version': '2023-06-01',
+                        'anthropic-dangerous-direct-browser-access': 'true'
+                    },
+                    body: JSON.stringify({
+                        model: 'claude-haiku-4-5-20251001',
+                        max_tokens: 256,
+                        system: QW_SYSTEM,
+                        messages: [{ role: 'user', content: input }]
+                    })
+                });
+
+                if (!resp.ok) {
+                    const body = await resp.json().catch(() => ({}));
+                    throw new Error(body.error?.message || `HTTP ${resp.status}`);
+                }
+
+                const data = await resp.json();
+                const text = data.content?.[0]?.text || 'no response';
+                sql.textContent = text;
+                output.classList.remove('hidden');
+            } catch (e) {
+                err.textContent = e.message;
+                err.classList.remove('hidden');
+            } finally {
+                btn.textContent = 'Write';
+                btn.disabled = false;
+            }
+        }
+
+        function qwExample(el) {
+            document.getElementById('qwInput').value = el.textContent;
+        }
+
+        document.getElementById('qwInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); queryWrite(); }
         });
 
         // gnosis-radio launching soon modal
