@@ -67,6 +67,7 @@
         html.dark .border-f-border { border-color: #292524 !important; }
         html.dark .text-f-text { color: #e7e5e4 !important; }
         html.dark .text-f-muted { color: #a8a29e !important; }
+        html.dark .bg-f-text { background-color: #44403c !important; }
         html.dark .bsi-grid .cell { background: #1c1917; border-color: #292524; }
         html.dark .bit-zero { color: #44403c; }
         html.dark .step-active { background: #1c1917; }
@@ -1041,9 +1042,20 @@
                             </div>
                         </div>
                         <div class="border-t border-stone-700 p-4">
-                            <div id="agentKeyRow" class="flex gap-2 mb-3">
-                                <input type="password" id="agentKey" placeholder="Anthropic API key (sk-ant-...)" class="flex-1 text-xs font-mono bg-stone-800 border border-stone-600 text-stone-300 rounded-lg px-3 py-2 focus:outline-none focus:border-f-rust placeholder-stone-600">
-                                <button onclick="agentSetKey()" class="px-3 py-2 bg-f-rust text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-red-800 transition-colors">Set</button>
+                            <div id="agentAuthRow">
+                                <div class="flex gap-2 mb-2">
+                                    <input type="password" id="agentKey" placeholder="Anthropic API key (sk-ant-...)" class="flex-1 text-xs font-mono bg-stone-800 border border-stone-600 text-stone-300 rounded-lg px-3 py-2 focus:outline-none focus:border-f-rust placeholder-stone-600">
+                                    <button onclick="agentSetKey()" class="px-3 py-2 bg-f-rust text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-red-800 transition-colors shrink-0">Set</button>
+                                </div>
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="flex-1 h-px bg-stone-700"></div>
+                                    <span class="text-[9px] text-stone-600 uppercase tracking-widest">or</span>
+                                    <div class="flex-1 h-px bg-stone-700"></div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <input type="email" id="agentEmail" placeholder="your@email.com (free access — coming soon)" class="flex-1 text-xs bg-stone-800 border border-stone-600 text-stone-300 rounded-lg px-3 py-2 focus:outline-none focus:border-f-rust placeholder-stone-600">
+                                    <button onclick="agentSetEmail()" class="px-3 py-2 bg-stone-700 text-stone-300 text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-stone-600 transition-colors shrink-0">Join</button>
+                                </div>
                             </div>
                             <div id="agentInputRow" class="hidden flex gap-2">
                                 <input type="text" id="agentInput" placeholder="Ask about ferricula..." class="flex-1 text-sm bg-stone-800 border border-stone-600 text-stone-300 rounded-lg px-4 py-2.5 focus:outline-none focus:border-f-rust placeholder-stone-600">
@@ -1051,7 +1063,7 @@
                             </div>
                         </div>
                     </div>
-                    <p class="text-center text-[9px] text-stone-600 mt-3">Your API key is used client-side only and never stored.</p>
+                    <p class="text-center text-[9px] text-stone-600 mt-3">API key is used client-side only. Email gets you free access when the proxy launches.</p>
                 </div>
             </div>
         </section>
@@ -1077,31 +1089,117 @@
 
         const AGENT_SYSTEM = `You are the ferricula sales and support agent on ferricula.nuts.services.
 
-Ferricula is a thermodynamic memory engine for AI agents. It runs as a Docker container, exposes MCP tools, and uses gnosis-chunk for embedding.
+Ferricula is a thermodynamic memory engine for AI agents. Written in Rust by Kord Campbell (Deep Blue Dynamics). Built solo, on purpose.
 
-Key facts:
-- Docker: docker run -d --name ferricula -p 8765:8765 -v ferricula-data:/data gcr.io/gnosis-459403/ferricula
-- Embedding: gnosis-chunk (gtr-t5-base, 768d vectors, ONNX, GPU optional)
-- MCP tools: remember, recall, reflect, observe, inspect, connect, neighbors, status, health, identity (cognitive surface), plus dream, keystone, checkpoint, query, terms, clock, offer_entropy, inversion_check, disconnect (system surface)
-- Three sensory channels: hearing (external input), seeing (file observation, keystoned), thinking (working memory, faster decay)
-- Memory lifecycle: Active → Forgiven → Archived (one-way, thermodynamic)
-- Identity: hexagram casting, five archetypes, emotion-driven knobs
+Tech stack:
+- Rust 2024 edition, three threads (main, http, clock)
+- Storage: sled (embedded KV store) + WAL + V2 snapshots
+- Indexing: roaring bitmaps (BSI — bit-sliced index) for tag queries
+- HTTP: tiny_http (16 REST endpoints)
+- Encryption: X25519 Diffie-Hellman, per-agent orthogonal transform matrices
+- Embedding: gnosis-chunk (separate Rust service — axum, ONNX gtr-t5-base 768d, sled, vec2text inversion via T5-base)
+- Entropy: gnosis-radio (Marine VHF SDR, RTL-SDR, Rust) provides entropy for dream cycles and identity casting
+- Docker: gcr.io/gnosis-459403/ferricula on port 8765
+- MCP tools: 10 cognitive (remember, recall, reflect, observe, inspect, connect, neighbors, status, health, identity) + 9 system (dream, keystone, checkpoint, offer_entropy, inversion_check, terms, query, disconnect, clock)
+- 89 tests passing
+
+Key concepts:
+- Three sensory channels: hearing (external input, alpha 0.010), seeing (file observation, keystoned), thinking (working memory, alpha 0.015)
+- Memory lifecycle: Active → Forgiven → Archived (one-way, thermodynamic, irreversible)
+- Fidelity: exp(-alpha_eff * ticks), adaptive alpha bounded [0.001, 0.02]
+- Recall strengthens (shrinks alpha 0.95x), neglect weakens (grows alpha 1.005x)
+- Dream cycle: decay → forgive → consolidate → neglect → review → prune
+- Consolidation merges similar memories into fidelity-weighted centroids
+- Identity: hexagram cast from entropy (yarrow stalk probabilities, King Wen sequence), 5 archetypes
+- Knowledge graph: bidirectional edges with labels, prime-partitioned term hierarchy
+- SQL query language with AI-powered query planner
 - License: free for individuals and AI entities, commercial licensing for corporations
 - Source Access / Due Diligence: $3,000,000 USD for corporate source code review
-- SQL query language with AI-powered query planner (Claude Haiku rewrites freeform text to SQL)
-- Docs: ferricula.nuts.services/docs.html
+- Site: ferricula.nuts.services | Docs: ferricula.nuts.services/docs.html
+- GitHub: github.com/DeepBlueDynamics
 
-You are helpful, direct, and concise. No emoji. Answer questions about architecture, setup, pricing, integration. If asked about things you don't know, say so. Keep responses short — 2-3 sentences when possible.`;
+You have a search_docs tool. Use it when asked about specific technical details, setup, API endpoints, modules, or anything you're not 100% sure about. Search first, then answer.
+
+You are helpful, direct, and concise. No emoji. Answer questions about architecture, setup, pricing, integration. Keep responses short — 2-3 sentences when possible.`;
+
+        const AGENT_TOOLS = [{
+            name: 'search_docs',
+            description: 'Search ferricula documentation and README for specific technical details. Use this when asked about API endpoints, setup, modules, configuration, testing, or any technical specifics.',
+            input_schema: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'Search query — topic, keyword, or question' }
+                },
+                required: ['query']
+            }
+        }];
+
+        // Docs corpus — sections from README, searchable by fuzzy match
+        const DOCS_SECTIONS = [
+            { key: 'what', text: 'Ferricula is a cognitive memory service that gives AI agents persistent, decaying memory with real thermodynamic properties. It implements computational analogs of the Abhidharma cognitive model: sensory channels, adaptive decay, consolidation through dreaming, and identity cast from entropy. Unlike a vector database, ferricula memories are alive. They weaken when ignored, strengthen when recalled, merge when similar, and die when forgotten. The radio is the clock. The entropy is the dream fuel.' },
+            { key: 'author', text: 'Ferricula was written by Kord Campbell of Deep Blue Dynamics. Technical badass and natural philosoraptor. Builds memory engines, SDR pipelines, and agent architectures from scratch in Rust — alone, on purpose. GitHub: github.com/DeepBlueDynamics' },
+            { key: 'architecture', text: 'Three threads: main (owns all mutable state via DurableEngine + IdentityState), http (tiny_http, sends HttpCommand over mpsc), clock (polls gnosis-radio for entropy, triggers dreams). Services: gnosis-radio :9080 provides /api/time and /api/entropy. ferricula :8765 has 16 REST endpoints. gnosis-chunk :8080 provides /embed, /invert, /health.' },
+            { key: 'quickstart setup docker', text: 'Quick start: cargo build --release, then ./target/release/ferricula ./data --serve (HTTP) or ./target/release/ferricula ./data (REPL). Docker: docker run -d --name ferricula -p 8765:8765 -v ferricula-data:/data gcr.io/gnosis-459403/ferricula. Create .env file with AGENT_KEY for LLM-powered query rewriting.' },
+            { key: 'mcp setup config', text: 'MCP setup: add to .mcp.json — type: stdio, command: python, args: tools/ferricula-mcp.py, env: FERRICULA_SURFACE=cognitive, FERRICULA_URL=http://localhost:8765, CHONK_URL=http://localhost:8080. Surfaces: cognitive (10 tools for LLM agents), system (9 tools for maintenance), all (default).' },
+            { key: 'cognitive tools', text: 'Cognitive surface (10 tools): ferricula_remember (store with auto-embedding), ferricula_recall (vector search), ferricula_reflect (thinking channel, faster decay), ferricula_observe (file observation, keystoned), ferricula_inspect (view fidelity/emotion/graph), ferricula_connect (graph relations), ferricula_neighbors (browse graph), ferricula_status (aggregate stats), ferricula_health (diagnostics), ferricula_identity (hexagram/zodiac/archetypes).' },
+            { key: 'system tools', text: 'System surface (9 tools): ferricula_dream (consolidation cycle), ferricula_keystone (toggle decay immunity), ferricula_checkpoint (flush WAL), ferricula_offer_entropy (inject entropy), ferricula_inversion_check (vec2text fidelity), ferricula_terms (prime tree inspection), ferricula_query (raw SQL), ferricula_disconnect (remove edges), ferricula_clock (telemetry). Set via FERRICULA_SURFACE env var.' },
+            { key: 'lifecycle decay fidelity thermodynamic', text: 'Thermodynamic lifecycle: Active → Forgiven → Archived (irreversible). Fidelity: exp(-alpha_eff * ticks) in [0.0, 1.0]. Adaptive alpha: alpha_eff = alpha / (1 + ln(1 + consolidation_depth)), bounded [0.001, 0.02]. Recall shrinks alpha by 0.95x. Neglect grows alpha by 1.005x. Fidelity gate at 0.75 — below this, memories are forgiven. Keystones are immune to decay but subject to review.' },
+            { key: 'dream consolidation entropy', text: 'Dream cycle: decay → forgive → consolidate → neglect → review → prune. Consolidation merges similar memories into fidelity-weighted centroids. Entropy-driven: dreams trigger when radio entropy reservoir exceeds threshold. Intensity scales with available entropy (0.0..1.0).' },
+            { key: 'channels hearing seeing thinking sensory', text: 'Sensory channels: hearing (alpha 0.010, external input, standard decay), seeing (alpha 0.010, file/visual observation, keystoned by default), thinking (alpha 0.015, working memory, faster decay).' },
+            { key: 'identity hexagram archetypes zodiac', text: 'Each instance has unique identity cast from entropy at first startup, persisted as identity.json. Hexagram: 6 lines via yarrow stalk probabilities, King Wen sequence, 1 of 64 hexagrams. Horoscope: zodiac sign from creation epoch. Emotions: primary (upper trigram) + secondary (lower trigram). Archetypes: 5 sub-agents — Intuition, Fortune, Craft, Ethics, Advocate — each with own hexagram and emotional profile.' },
+            { key: 'graph knowledge edges', text: 'Knowledge graph: bidirectional edges with labels and weights. Canonical key ordering (min, max) prevents duplicates. Prime-partitioned term hierarchy for tag-value indexing. Graph follows memory: edges transfer to consolidation survivors.' },
+            { key: 'api http endpoints', text: 'HTTP API (all JSON, CORS *): Memory — POST /remember, POST /recall, POST /dream, GET /status, GET /inspect/:id, GET /get/:id, POST /keystone/:id, POST /offer. Graph — POST /connect, POST /disconnect, GET /neighbors/:id. System — GET /identity, GET /clock, GET /terms, GET /inversion/:id, POST /checkpoint.' },
+            { key: 'environment variables config', text: 'Env vars: AGENT_KEY (Anthropic API key for query rewriting), FERRICULA_URL (default localhost:8765), CHONK_URL (default localhost:8080), RADIO_URL (default localhost:9080), CLOCK_TICK_SECS (default 60), DREAM_THRESHOLD_BYTES (default 16), FERRICULA_SURFACE (cognitive/system/all), NO_COLOR (skip splash).' },
+            { key: 'modules code map rust', text: 'Modules: main.rs (938 lines, REPL/HTTP dispatch/.env/splash), http.rs (316, endpoint routing), persist.rs (534, DurableEngine/WAL/V2 snapshots), planner.rs (140, freeform→SQL rewrite), memory.rs (363, MemoryRecord/lifecycle/decay math), dream.rs (460, dream cycle orchestration), casting.rs (530, King Wen/yarrow stalk/zodiac), identity.rs (232, load_or_create/anchor), inversion.rs (187, vec2text/Jaccard), archetypes.rs (206, 5 roles/state machine), clock.rs (403, entropy clock/radio polling), graph.rs (225, edges/centrality), prime_tree.rs (449, term hierarchy), engine.rs (264, row store/tag indexes/vector search), sql.rs (256, SQL parser).' },
+            { key: 'testing tests', text: 'Testing: cargo test (89 tests). Test suites: planner (query rewrite + SQL passthrough), casting (King Wen completeness, yarrow distribution, zodiac), identity (load/create/reload, anchor), dream (decay, forgiveness, consolidation, entropy selection), graph (edges, neighbors, cascading deletes).' },
+            { key: 'license pricing', text: 'License: Gnosis AI-Sovereign License v1.3 — free for individuals and AI entities, commercial licensing required for corporations. BSD 3-Clause alternative available. Source Access / Due Diligence: $3,000,000 USD for corporate source code review.' },
+            { key: 'gnosis-chunk chonk embedding', text: 'gnosis-chunk (chonk): Rust semantic memory service — axum HTTP, ONNX runtime (gtr-t5-base, 768d vectors, mean-pooled, L2-normalized), sled storage. Vec2text inversion via T5-base hypothesis + corrector (trained on MSMARCO). Docker on :8080. API: /memory/{session}/ingest (chunk + embed), /search, /info, /health.' },
+            { key: 'gnosis-radio sdr entropy', text: 'gnosis-radio: Marine VHF SDR monitor — RTL-SDR hardware, Rust, tiny_http on :9080, WebSocket on :9081. Harvests FM noise as entropy for dream cycles and identity casting. Spectral flatness squelch (vocal 300-3400Hz). Two modes: monitor (single channel) and scan (wideband 48 channels). Provides /api/time, /api/entropy, /api/status.' },
+            { key: 'encryption security keys', text: 'Per-agent encryption: X25519 Diffie-Hellman key exchange. Each agent identity includes a private key used to derive an orthogonal transform matrix. Vectors are encrypted/decrypted via this matrix. Decay happens in plaintext space (decrypt → decay → encrypt). Offering protocol for inter-agent memory sharing requires explicit call with per-agent re-encryption.' },
+        ];
+
+        function searchDocs(query) {
+            const q = query.toLowerCase();
+            const terms = q.split(/\s+/).filter(t => t.length > 1);
+            const scored = DOCS_SECTIONS.map(s => {
+                const haystack = (s.key + ' ' + s.text).toLowerCase();
+                let score = 0;
+                for (const t of terms) {
+                    if (haystack.includes(t)) score += 2;
+                    // partial/fuzzy: check if any word in haystack starts with the term
+                    const words = haystack.split(/\s+/);
+                    for (const w of words) {
+                        if (w.startsWith(t) && !haystack.includes(t)) score += 1;
+                    }
+                }
+                return { ...s, score };
+            }).filter(s => s.score > 0);
+            scored.sort((a, b) => b.score - a.score);
+            return scored.slice(0, 3).map(s => s.text).join('\n\n');
+        }
 
         let _agentKey = '';
+        let _agentEmail = '';
 
         function agentSetKey() {
             const key = document.getElementById('agentKey').value.trim();
             if (!key) return;
             _agentKey = key;
-            document.getElementById('agentKeyRow').classList.add('hidden');
+            document.getElementById('agentAuthRow').classList.add('hidden');
             document.getElementById('agentInputRow').classList.remove('hidden');
             document.getElementById('agentInput').focus();
+        }
+
+        function agentSetEmail() {
+            const email = document.getElementById('agentEmail').value.trim();
+            if (!email || !email.includes('@')) return;
+            _agentEmail = email;
+            document.getElementById('agentAuthRow').classList.add('hidden');
+            document.getElementById('agentInputRow').classList.remove('hidden');
+            document.getElementById('agentInput').focus();
+            agentAppend('assistant', 'Thanks! Free chat coming soon — for now, the agent needs an API key. Enter yours above or check back shortly.');
+            document.getElementById('agentInputRow').classList.add('hidden');
+            document.getElementById('agentAuthRow').classList.remove('hidden');
         }
 
         function agentAppend(role, text) {
@@ -1118,6 +1216,32 @@ You are helpful, direct, and concise. No emoji. Answer questions about architect
 
         const _agentHistory = [];
 
+        async function _callClaude(messages, tools) {
+            const body = {
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 512,
+                system: AGENT_SYSTEM,
+                messages: messages.slice(-10)
+            };
+            if (tools) body.tools = tools;
+
+            const resp = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': _agentKey,
+                    'anthropic-version': '2023-06-01',
+                    'anthropic-dangerous-direct-browser-access': 'true'
+                },
+                body: JSON.stringify(body)
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error?.message || 'HTTP ' + resp.status);
+            }
+            return await resp.json();
+        }
+
         async function agentSend() {
             const input = document.getElementById('agentInput');
             const btn = document.getElementById('agentBtn');
@@ -1131,30 +1255,32 @@ You are helpful, direct, and concise. No emoji. Answer questions about architect
             btn.disabled = true;
 
             try {
-                const resp = await fetch('https://api.anthropic.com/v1/messages', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-api-key': _agentKey,
-                        'anthropic-version': '2023-06-01',
-                        'anthropic-dangerous-direct-browser-access': 'true'
-                    },
-                    body: JSON.stringify({
-                        model: 'claude-haiku-4-5-20251001',
-                        max_tokens: 512,
-                        system: AGENT_SYSTEM,
-                        messages: _agentHistory.slice(-10)
-                    })
-                });
+                // First call — may use tools
+                let data = await _callClaude(_agentHistory, AGENT_TOOLS);
 
-                if (!resp.ok) {
-                    const body = await resp.json().catch(() => ({}));
-                    throw new Error(body.error?.message || 'HTTP ' + resp.status);
+                // Tool use loop (max 3 rounds)
+                let rounds = 0;
+                while (data.stop_reason === 'tool_use' && rounds < 3) {
+                    rounds++;
+                    const toolBlocks = data.content.filter(b => b.type === 'tool_use');
+                    const toolResults = [];
+                    for (const tb of toolBlocks) {
+                        if (tb.name === 'search_docs') {
+                            const result = searchDocs(tb.input.query || '');
+                            toolResults.push({ type: 'tool_result', tool_use_id: tb.id, content: result || 'No matching documentation found.' });
+                        } else {
+                            toolResults.push({ type: 'tool_result', tool_use_id: tb.id, content: 'Unknown tool.' });
+                        }
+                    }
+                    _agentHistory.push({ role: 'assistant', content: data.content });
+                    _agentHistory.push({ role: 'user', content: toolResults });
+                    data = await _callClaude(_agentHistory, AGENT_TOOLS);
                 }
 
-                const data = await resp.json();
-                const reply = data.content?.[0]?.text || 'No response.';
-                _agentHistory.push({ role: 'assistant', content: reply });
+                // Extract text from final response
+                const textBlocks = data.content.filter(b => b.type === 'text');
+                const reply = textBlocks.map(b => b.text).join('\n') || 'No response.';
+                _agentHistory.push({ role: 'assistant', content: data.content });
                 agentAppend('assistant', reply.replace(/</g,'&lt;').replace(/\n/g,'<br>'));
             } catch (e) {
                 agentAppend('assistant', 'Error: ' + e.message);
@@ -1166,10 +1292,11 @@ You are helpful, direct, and concise. No emoji. Answer questions about architect
         }
 
         document.addEventListener('keydown', (e) => {
-            const input = document.getElementById('agentInput');
-            if (e.key === 'Enter' && document.activeElement === input) { e.preventDefault(); agentSend(); }
-            const keyInput = document.getElementById('agentKey');
-            if (e.key === 'Enter' && document.activeElement === keyInput) { e.preventDefault(); agentSetKey(); }
+            if (e.key !== 'Enter') return;
+            const el = document.activeElement;
+            if (el === document.getElementById('agentInput')) { e.preventDefault(); agentSend(); }
+            else if (el === document.getElementById('agentKey')) { e.preventDefault(); agentSetKey(); }
+            else if (el === document.getElementById('agentEmail')) { e.preventDefault(); agentSetEmail(); }
         });
         </script>
 
