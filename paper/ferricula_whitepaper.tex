@@ -1,0 +1,705 @@
+\documentclass[twocolumn,10pt]{article}
+
+\usepackage[margin=0.85in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{caption}
+
+\definecolor{rust}{RGB}{185,28,28}
+\definecolor{codebg}{RGB}{245,245,244}
+\definecolor{codetext}{RGB}{28,25,23}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=rust,
+    citecolor=rust,
+    urlcolor=rust,
+}
+
+\lstset{
+    basicstyle=\ttfamily\scriptsize,
+    backgroundcolor=\color{codebg},
+    frame=single,
+    rulecolor=\color{black!20},
+    breaklines=true,
+    columns=flexible,
+}
+
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textsc{Ferricula}}
+\fancyhead[R]{\small\textsc{Deep Blue Dynamics}}
+\fancyfoot[C]{\thepage}
+
+\title{%
+\textsc{Ferricula}\\[4pt]
+\large A Thermodynamic Memory Engine for AI Agents%
+}
+
+\author{%
+Kord Campbell\\
+\textit{Deep Blue Dynamics}\\
+\texttt{ferricula.com}%
+}
+
+\date{March 2026}
+
+\begin{document}
+\maketitle
+
+% ══════════════════════════════════════════════════════════════════
+\begin{abstract}
+\noindent
+We present \textsc{Ferricula}, a memory engine for AI agents in
+which memories are thermodynamic objects: they decay when ignored,
+strengthen when recalled, merge when similar, and die when forgotten.
+Written in Rust with a three-thread architecture, \textsc{Ferricula}
+implements computational analogs of the Abhidharma cognitive model---sensory
+channels, adaptive exponential decay, consolidation through dreaming, and
+identity cast from physical entropy harvested from a software-defined radio.
+In a multi-agent simulation of \textit{The Count of Monte Cristo} with eight
+concurrent ferricula instances, we demonstrate sub-second recall latency
+(avg.\ 57\,ms), sub-20\,ms memory ingestion, and emergent narrative
+divergence as each agent's dream cycles produce distinct memory landscapes
+from identical source material.  A 163\,MB reference document indexed
+through the companion embedding service (gnosis-chunk) achieves sub-second
+search with no approximate nearest-neighbor structures---brute-force
+cosine similarity over roaring-bitmap-filtered candidate sets.
+Unlike vector databases, \textsc{Ferricula} memories are alive.
+\end{abstract}
+
+% ══════════════════════════════════════════════════════════════════
+\section{Introduction}
+
+The dominant paradigm for AI agent memory is the vector database:
+embeddings are stored, retrieved by approximate nearest-neighbor search,
+and returned with no notion of time, decay, or lifecycle.  This produces
+agents with perfect, static recall---a property no biological cognitive
+system exhibits and one that creates practical problems at scale.
+Irrelevant memories accumulate indefinitely, context windows fill with
+stale information, and agents cannot distinguish between what matters now
+and what mattered once.
+
+\textsc{Ferricula} takes a different approach.  Every memory has a
+\textit{fidelity} that decays exponentially over time.  Recall
+strengthens memories by reducing their decay rate.  Neglect accelerates
+it.  When fidelity drops below a threshold, the memory transitions
+through an irreversible lifecycle: \textsc{Active} $\to$
+\textsc{Forgiven} $\to$ \textsc{Archived}.  Periodic dream cycles
+consolidate similar memories into weighted centroids, prune terminal
+records, and extract ghost echoes from dying memories via vec2text
+inversion.  The result is a memory system that self-regulates: important
+memories persist because they are used; unimportant ones fade because
+they are not.
+
+This paper describes the architecture, the thermodynamic model, the
+dream cycle, and the results of a multi-agent literary simulation that
+stress-tests the system across 117 chapters of Dumas's novel.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Architecture}
+
+\textsc{Ferricula} is a single Rust binary with three threads, no async
+runtime, and no external database dependencies.
+
+\subsection{Thread Model}
+
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+\item \textbf{Main thread} --- owns all mutable state: the
+  \texttt{DurableEngine} (row store + memory records + graph + prime
+  tree), the \texttt{IdentityState}, and the persistence layer.
+  Drains command channels from the other two threads.
+\item \textbf{HTTP thread} --- a \texttt{tiny\_http} server exposing
+  16 REST endpoints.  Serializes requests as \texttt{HttpCommand}
+  structs and sends them over an \texttt{mpsc} channel to the main
+  thread.  Never touches mutable state directly.
+\item \textbf{Clock thread} --- polls gnosis-radio (a marine VHF
+  software-defined radio on port 9080) for UTC time and entropy bytes.
+  When the entropy reservoir exceeds a configurable threshold,
+  emits a \texttt{DreamTrigger} event with intensity proportional
+  to accumulated entropy.
+\end{enumerate}
+
+\noindent
+This design eliminates all interior mutability, lock contention, and
+data races.  The main thread is the single writer; other threads
+communicate exclusively through typed channels.
+
+\subsection{Persistence}
+
+Durability uses a write-ahead log (WAL) with binary
+\texttt{postcard}-encoded entries, each length-prefixed for streaming
+recovery.  Periodic checkpoints atomically snapshot the full system
+state (rows, memory records, graph edges, prime tree) as a single
+\texttt{postcard} blob via temporary file and rename.  On startup,
+the engine loads the most recent snapshot and replays any WAL entries
+written after it.
+
+\subsection{External Services}
+
+\textsc{Ferricula} delegates embedding and text inversion to
+\textbf{gnosis-chunk} (``chonk''), a separate Rust service built on
+Axum with ONNX-runtime inference.  Chonk provides gtr-t5-base embeddings
+(768 dimensions), semantic chunking, and vec2text inversion via a T5-base
+hypothesis-and-corrector pipeline.  \textbf{gnosis-radio} provides
+physical entropy from FM receiver noise and UTC time synchronized to
+marine VHF channels.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Thermodynamic Memory Model}
+
+\subsection{Memory Records}
+
+Each memory consists of a \textit{row} (tags, vector) stored in the engine
+and a \textit{thermodynamic envelope} (\texttt{MemoryRecord}) that tracks
+lifecycle metadata:
+
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+\item \textbf{Fidelity} $f \in [0, 1]$ --- exponential decay per tick
+\item \textbf{Decay rate} $\alpha \in [0.001, 0.02]$ --- adaptive
+\item \textbf{State} --- \textsc{Active}, \textsc{Forgiven}, or
+  \textsc{Archived}
+\item \textbf{Keystone} --- boolean; immune to decay
+\item \textbf{Consolidation depth} --- merge count; slows effective decay
+\item \textbf{Emotion} --- primary and optional secondary affect tag
+\item \textbf{Provenance} --- \textsc{Ingested}, \textsc{Consolidated\{from\}},
+  or \textsc{Revived\{seed\}}
+\end{itemize}
+
+\subsection{Exponential Decay}
+
+At each dream tick, non-keystone active memories undergo:
+\begin{equation}
+f \leftarrow f \cdot e^{-\alpha_{\mathrm{eff}}}
+\end{equation}
+where the effective decay rate incorporates consolidation depth $d$:
+\begin{equation}
+\alpha_{\mathrm{eff}} = \frac{\alpha}{1 + \ln(1 + d)}
+\end{equation}
+
+Memories that have been consolidated multiple times decay logarithmically
+slower---an emergent importance signal.  The base rate $\alpha$ adapts:
+
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+\item \textbf{Recall}: $\alpha \leftarrow \max(\alpha \cdot 0.95,\; 0.001)$
+\item \textbf{Neglect}: $\alpha \leftarrow \min(\alpha \cdot 1.005,\; 0.02)$
+\end{itemize}
+
+\noindent
+Neglect is assessed during dream: any memory not recalled within the last
+86\,400 seconds (24 hours) has its decay rate nudged upward.
+
+\subsection{Fidelity Gate}
+
+A hard threshold at $f = 0.75$ governs lifecycle transitions.  When an
+active memory's fidelity drops below this gate during a dream cycle, it
+transitions to \textsc{Forgiven}.  This is irreversible: the one-way
+lifecycle \textsc{Active} $\to$ \textsc{Forgiven} $\to$ \textsc{Archived}
+admits no reversals.  Archived records that reach $f < \epsilon$ are
+pruned entirely.
+
+\subsection{Sensory Channels}
+
+Three channels set the initial decay rate and keystone behavior:
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+Channel & $\alpha_0$ & Keystone \\
+\midrule
+\texttt{hearing} & 0.010 & No \\
+\texttt{seeing}  & 0.010 & Yes \\
+\texttt{thinking} & 0.015 & No \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+\texttt{hearing} represents external input (standard decay).
+\texttt{seeing} represents file observation (reference material,
+keystoned by default).  \texttt{thinking} represents working memory
+with accelerated decay---thoughts fade faster unless reinforced by recall.
+
+% ══════════════════════════════════════════════════════════════════
+\section{The Dream Cycle}
+
+Dreams are the engine's maintenance cycle.  They can be triggered
+manually, by the clock thread when entropy accumulates past a threshold,
+or by explicit API call.  A dream runs six phases in sequence.
+
+\subsection{Phase 1: Entropy-Gated Decay}
+
+The intensity parameter $I \in [0, 1]$ controls what fraction of active
+memories receive a decay tick.  At $I = 1.0$ (manual dream), all
+active non-keystone memories are ticked.  When entropy-triggered, the
+intensity is proportional to accumulated entropy bytes, and individual
+memories are selected using the entropy bits as a probabilistic filter:
+
+\begin{equation}
+\text{include}(i) =
+\begin{cases}
+\text{true} & \text{if } \texttt{seed}[i \bmod n] < \lfloor 255 \cdot I \rfloor \\
+\text{false} & \text{otherwise}
+\end{cases}
+\end{equation}
+
+\noindent
+This means decay itself is stochastic when driven by radio entropy---a
+property absent from deterministic vector stores.
+
+\subsection{Phase 2: Forgiveness}
+
+Active memories below the 0.75 fidelity gate are transitioned to
+\textsc{Forgiven}.
+
+\subsection{Phase 3: Consolidation}
+
+Active memories are grouped by pairwise cosine similarity.  Groups
+where all members exceed a 0.85 similarity threshold are merged: the
+highest-fidelity member absorbs the others, inheriting their graph
+edges.  The survivor's consolidation depth increments, reducing its
+future effective decay rate.  Provenance records the full set of
+source IDs.
+
+\subsection{Phase 4: Neglect}
+
+Memories not recalled in the last 24 hours have their base $\alpha$
+increased by a factor of 1.005.
+
+\subsection{Phase 5: Keystone Review}
+
+Keystones are counted for reporting.  (Future: centrality-based
+promotion and demotion.)
+
+\subsection{Phase 6: Archive and Prune}
+
+Records that have been \textsc{Forgiven} for over one hour are archived.
+Archived records with near-zero fidelity are pruned.  Before deletion,
+a dying memory's vector is inverted to text via gnosis-chunk's vec2text
+pipeline.  If the round-trip cosine fidelity exceeds 0.5, the extracted
+text is attached as a labeled ``ghost echo'' edge to the memory's
+surviving neighbors:
+
+\begin{lstlisting}
+graph.connect(neighbor, neighbor,
+    "echo:extracted_text", 0.1);
+\end{lstlisting}
+
+\noindent
+Ghost echoes are low-weight self-edges carrying fragments of what was
+lost---semantic residue from the dead.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Knowledge Graph}
+
+\subsection{Roaring Bitmap Adjacency}
+
+The graph stores bidirectional edges with labels and weights.
+Adjacency lists are \texttt{RoaringBitmap} instances, giving
+compressed set membership with $O(1)$ contains-checks and efficient
+set operations (union, intersection, difference).  Canonical key
+ordering \texttt{(min(a,b), max(a,b))} prevents duplicate edges.
+
+Two-hop neighborhood queries compose naturally:
+\begin{equation}
+N_2(v) = \bigcup_{u \in N_1(v)} N_1(u) \setminus \{v\}
+\end{equation}
+
+\subsection{Prime-Partitioned Term Hierarchy}
+
+Terms are organized in a hierarchical tree where each node's partition
+threshold is a prime number from the sequence $\{2, 3, 5, 7, 11,
+13, \ldots\}$.  When a leaf node's member count exceeds its prime, it
+splits: members are distributed into children keyed by
+$\texttt{member\_id} \bmod p_{\text{child}}$.
+
+This produces a self-balancing hierarchy that adapts to term popularity
+without explicit rebalancing.  Unlike the Python predecessor
+(SlothANN), the Rust implementation adds a \textit{merge} operation:
+nodes depopulated by decay consolidate with their nearest sibling,
+maintaining thermodynamic equilibrium between split and merge.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Identity System}
+
+Each \textsc{Ferricula} instance has a unique identity cast from entropy
+at first startup and persisted as \texttt{identity.json}.
+
+\subsection{Hexagram Casting}
+
+Six lines are generated using yarrow stalk probabilities derived from
+entropy bytes.  The probabilities follow the traditional distribution:
+old yin (6) = 1/16, young yang (7) = 5/16, young yin (8) = 7/16,
+old yang (9) = 3/16.  The resulting upper and lower trigrams index
+into the King Wen sequence (a complete $8 \times 8$ lookup table
+hardcoded in \texttt{casting.rs}) to produce one of 64 hexagrams.
+
+\subsection{Emotional Seeding}
+
+Each trigram maps to a canonical emotion: Heaven $\to$ determined,
+Lake $\to$ joyful, Fire $\to$ curious, Thunder $\to$ angry,
+Wind $\to$ peaceful, Water $\to$ afraid, Mountain $\to$ content,
+Earth $\to$ loving.  The upper trigram sets the primary emotion;
+the lower trigram sets the secondary.
+
+\subsection{Five Archetypes}
+
+Five sub-agent archetypes (Intuition, Fortune, Craft, Ethics, Advocate)
+are each seeded with their own hexagram cast from the same entropy pool.
+The archetypes progress through a state machine: \textsc{Dormant} $\to$
+\textsc{Awakening} $\to$ \textsc{Active} $\to$ \textsc{Transcendent},
+with transitions gated by entropy tier thresholds.
+
+% ══════════════════════════════════════════════════════════════════
+\section{The Entropy Clock}
+
+Time in \textsc{Ferricula} is not wall-clock time.  The clock thread
+polls gnosis-radio at configurable intervals (default: 60 seconds)
+for two resources: UTC epoch and raw entropy bytes harvested from
+FM receiver noise.  Entropy accumulates in a reservoir.  When the
+reservoir exceeds a threshold (default: 16 bytes), the clock emits
+a \texttt{DreamTrigger} with intensity proportional to the stored
+entropy.
+
+If the radio is unreachable, time does not flow and the memory
+system stays frozen.  This is by design: without environmental
+input, the agent has no basis for deciding what to forget.
+
+% ══════════════════════════════════════════════════════════════════
+\section{MCP Integration}
+
+\textsc{Ferricula} exposes tools through the Model Context Protocol
+(MCP) via a Python bridge (\texttt{ferricula-mcp.py}, 34\,KB) that
+manages the Rust subprocess and translates between MCP's JSON-RPC
+and ferricula's HTTP API.
+
+Tools are scoped by \textit{surface}:
+
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+\item \textbf{Cognitive} (10 tools) --- what the LLM singleton sees:
+  \texttt{remember}, \texttt{recall}, \texttt{reflect}, \texttt{observe},
+  \texttt{inspect}, \texttt{connect}, \texttt{neighbors}, \texttt{status},
+  \texttt{health}, \texttt{identity}.
+\item \textbf{System} (9 tools) --- maintenance and audit:
+  \texttt{dream}, \texttt{keystone}, \texttt{checkpoint},
+  \texttt{offer\_entropy}, \texttt{inversion\_check}, \texttt{terms},
+  \texttt{query}, \texttt{disconnect}, \texttt{clock}.
+\end{itemize}
+
+\noindent
+The surface is selected via environment variable
+(\texttt{FERRICULA\_SURFACE}), enforcing a separation between the
+agent's conscious interface and the system's metabolic machinery.
+
+% ══════════════════════════════════════════════════════════════════
+\section{The Arena: Monte Cristo}
+
+To validate the architecture under sustained multi-agent load, we
+constructed the \textit{Arena}: eight \textsc{Ferricula} containers
+running concurrently, each representing a character from Alexandre
+Dumas's \textit{The Count of Monte Cristo} (1844).
+
+\subsection{Setup}
+
+The full text of the novel (2.79\,MB, 117 chapters, Project Gutenberg
+edition) is processed chapter by chapter.  Each chapter is sent to
+gnosis-chunk for semantic chunking and embedding (gtr-t5-base, 768
+dimensions).  Chunks are classified by keyword patterns into keystones
+(betrayal, treasure, prison, death, love, secret) and tagged with
+character presence and affect.  Every chunk is ingested into all eight
+character instances simultaneously, producing identical raw material.
+
+The eight characters are:
+
+\begin{center}
+\footnotesize
+\begin{tabular}{llr}
+\toprule
+Character & Focus & Port \\
+\midrule
+Dant\`es & justice, transformation & 8765 \\
+Merc\'ed\`es & love, sacrifice & 8766 \\
+Fernand & jealousy, ambition & 8767 \\
+Danglars & greed, self-preservation & 8768 \\
+Villefort & law vs.\ justice & 8769 \\
+Faria & wisdom, mentorship & 8770 \\
+Morrel & honor, hope & 8771 \\
+Hayd\'ee & freedom, testimony & 8772 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Interaction Loop}
+
+For each chapter: (1) ingest chunks into all eight instances;
+(2) summarize the chapter via Claude Haiku; (3) identify which
+characters are present; (4) each present character recalls from
+\textit{their own} memory, then responds in-character using their
+recalled memories as context; (5) absent characters ``overhear''
+the conversation at reduced importance; (6) three dream cycles run
+independently in each container.
+
+\subsection{Divergence}
+
+Despite starting from identical text, the eight memory systems
+rapidly diverge.  Dream cycles apply stochastic entropy-gated decay
+independently.  Each character's recall patterns (shaped by which
+chapters they speak in) produce different $\alpha$ trajectories.
+Consolidation merges different subsets depending on which memories
+were already weakened.  After five chapters, Dant\`es retained 69
+active memories from 90 total (30 keystones), while other characters
+showed different distributions based on their narrative involvement.
+
+The \textit{same} text, processed through different thermodynamic
+histories, produces genuinely different agents---not through
+prompt engineering, but through the physics of the memory system itself.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Large-Scale Document Access}
+
+\textsc{Ferricula}'s architecture handles reference documents at
+significant scale.  The arena's document directory includes a 163\,MB
+reference volume (\textit{Encyclopaedia of Religion and Ethics},
+Vol.~3, Hastings 1910) alongside the 2.79\,MB novel, with entries
+spanning hundreds of topics including religious philosophy, ethics,
+and historical commentary.
+
+Indexed through gnosis-chunk's semantic chunking pipeline and stored
+as roaring-bitmap-indexed rows with 768-dimensional vectors,
+\textsc{Ferricula} achieves \textbf{sub-second search} across this
+corpus with no approximate nearest-neighbor index.  The brute-force
+cosine similarity scan over bitmap-filtered candidate sets completes
+well within interactive latency bounds.  This is possible because:
+
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+\item \textbf{Tag filtering first}: Roaring bitmap intersection
+  eliminates non-matching rows before any vector computation.
+\item \textbf{In-memory layout}: All rows reside in a
+  \texttt{BTreeMap}, with vectors as contiguous \texttt{Vec<f32>}.
+\item \textbf{No indirection}: No hash table chains, no pointer
+  chasing, no B-tree node traversal for the hot path.
+\item \textbf{Brute force is correct}: At the scale of single-agent
+  memory (thousands to low millions of records), brute cosine over
+  filtered candidates outperforms the overhead of maintaining an
+  HNSW or IVF index.
+\end{enumerate}
+
+\noindent
+The design principle is explicit: \textit{brute force until it hurts}.
+Approximate structures are complexity debt that pays dividends only at
+scales most agents will never reach.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Performance}
+
+Table~\ref{tab:perf} summarizes timing from the most recent arena run
+(5 chapters, 8 agents, 15 dream cycles total, 600 memory operations).
+
+\begin{table}[h]
+\centering
+\caption{Arena performance (ms). $n$ = operation count.}
+\label{tab:perf}
+\footnotesize
+\begin{tabular}{lrrrr}
+\toprule
+Operation & Avg & Min & Max & $n$ \\
+\midrule
+\texttt{remember}   & 18.7 &  3.5 & 192.8 & 600 \\
+\texttt{recall}     & 57.4 & 16.5 & 140.7 &  14 \\
+\texttt{dream}      & 10.8 &  2.0 &  32.1 & 120 \\
+\texttt{get\_row}   & 59.9 & 51.1 &  82.1 &   6 \\
+\texttt{chunk+embed} & 6874 & 3938 & 9599 &   5 \\
+\texttt{embed (single)} & 97.9 & 12.0 & 292.6 & 19 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent
+Key observations:
+
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+\item Memory ingestion averages 18.7\,ms per record, yielding
+  a throughput of approximately \textbf{53 memories/second} per
+  agent instance.
+\item Recall (vector search + fidelity scoring) averages 57.4\,ms,
+  \textbf{well under 100\,ms} interactive latency.
+\item Dream cycles average 10.8\,ms, making them cheap enough to
+  run frequently without blocking the agent.
+\item The bottleneck is embedding (chonk), not memory operations.
+  Ferricula's own operations are 10--100$\times$ faster than the
+  embedding step.
+\end{itemize}
+
+% ══════════════════════════════════════════════════════════════════
+\section{Cognitive Model}
+
+\textsc{Ferricula} implements computational analogs of the
+Abhidharma cognitive model as described by Walpola et al.\ (2017)
+in their functional mapping of Therav\=ada Buddhist cognitive
+processes.
+
+\begin{center}
+\footnotesize
+\begin{tabular}{ll}
+\toprule
+Abhidharma Concept & Ferricula Analog \\
+\midrule
+Contact (phassa) & \texttt{remember()} \\
+Feeling (vedan\=a) & emotion tags \\
+Perception (sa\~n\~n\=a) & tag indexes \\
+Thought (sa\.nkh\=ar\=a) & \texttt{MemoryRecord} \\
+Memory trigger & \texttt{recall()} \\
+Proliferation (papa\~nca) & graph traversal \\
+Fidelity gate & contact as gateway \\
+Impermanence (anicca) & exponential decay \\
+Equanimity (upekkh\=a) & forgiveness \\
+Concentration (sam\=adhi) & keystones \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+The 17-step cognitive series described in the Therav\=ada texts
+maps particularly well: most sensory input never becomes a memory
+(steps 1--2 only), while what triggers recall loops (steps 5, 10, 16)
+persists through repeated mind-contact.  In \textsc{Ferricula},
+$\texttt{recall\_count}$ is the direct analog: memories that are
+recalled survive; those that are not, decay.
+
+The paper does not claim equivalence with biological cognition.
+It claims that the Abhidharma provides a useful \textit{engineering
+ontology} for designing memory systems that self-regulate through
+thermodynamic principles already present in the Buddhist analysis
+of mind.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Related Work}
+
+\textbf{Vector databases} (Pinecone, Weaviate, Qdrant, Milvus)
+provide scalable similarity search but treat memories as static
+objects with no lifecycle, decay, or consolidation.  They solve
+retrieval; \textsc{Ferricula} solves \textit{memory}.
+
+\textbf{MemGPT} (Packer et al., 2023) introduced tiered memory
+for LLM agents with explicit management of main/archival memory.
+\textsc{Ferricula} differs in that lifecycle transitions are
+autonomous (driven by thermodynamics, not explicit agent commands)
+and memory importance emerges from recall patterns rather than
+being assigned.
+
+\textbf{Cognitive architectures} (SOAR, ACT-R) implement
+production-rule systems with working and long-term memory.
+\textsc{Ferricula} shares the principle of activation-based
+retrieval but replaces symbolic production rules with continuous
+vector similarity and thermodynamic decay.
+
+\textbf{Retrieval-augmented generation} (RAG) treats memory as
+a retrieval problem.  \textsc{Ferricula} treats it as a
+\textit{physics} problem: the right memories surface not because
+a retriever selected them, but because they survived.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Design Principles}
+
+Seven principles govern the implementation:
+
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+\item \textbf{Single-node only.}  No distributed coordination,
+  no cloud dependencies for core operation.
+\item \textbf{Rust, no Python runtime.}  The MCP connector is
+  the only Python---a thin subprocess wrapper.
+\item \textbf{Extend, don't replace.}  \texttt{MemoryRecord}
+  wraps \texttt{Row}.  The graph uses the same roaring bitmaps.
+  WAL entries are append-only.
+\item \textbf{Thermodynamic correctness.}  Lifecycle is one-way.
+  Decay is monotonic.  Consolidation preserves provenance.
+  No reversals.
+\item \textbf{Emergence over prescription.}  Prime-tree branching
+  adapts to density.  Roles emerge from connectivity percentiles.
+  Importance emerges from recall patterns.
+\item \textbf{Brute force until it hurts.}  No HNSW, no LSH,
+  no approximations until row count demands it.
+\item \textbf{Memory is physics regulating itself.}
+\end{enumerate}
+
+% ══════════════════════════════════════════════════════════════════
+\section{Availability}
+
+\textsc{Ferricula} v0.4.0 is available as a Docker image and
+source code.
+
+\begin{lstlisting}
+# Docker
+docker run -d --name ferricula \
+  -p 8765:8765 \
+  -v ferricula-data:/data \
+  gcr.io/gnosis-459403/ferricula
+
+# Source
+git clone git@github.com:\
+  DeepBlueDynamics/ferricula.git
+cargo build --release
+./target/release/ferricula ./data --serve
+\end{lstlisting}
+
+\noindent
+89 tests pass.  Licensed under the Gnosis AI-Sovereign License v1.3
+(free for individuals and AI entities; commercial licensing required
+for corporations), with a BSD 3-Clause alternative.
+
+Documentation and interactive query builder:
+\url{https://ferricula.com}
+
+% ══════════════════════════════════════════════════════════════════
+\section{Conclusion}
+
+\textsc{Ferricula} demonstrates that AI agent memory need not be
+a retrieval problem.  By treating memories as thermodynamic objects
+subject to decay, consolidation, and entropy-driven dreaming, we
+obtain a system where importance is emergent, forgetting is principled,
+and identity arises from the physics of the memory substrate itself.
+
+The Monte Cristo arena shows that identical input processed through
+independent thermodynamic histories produces genuinely distinct agents.
+The cognitive model borrowed from the Abhidharma provides not mysticism
+but engineering clarity: contact, feeling, perception, and thought
+map cleanly onto ingest, tag, index, and record.
+
+What persists is what the mind keeps touching.  Everything else fades,
+as it should.
+
+% ══════════════════════════════════════════════════════════════════
+\section*{References}
+
+\begin{enumerate}[leftmargin=*,itemsep=2pt,label={[\arabic*]}]
+\item Walpola, M., Walpola, R., Walpola, S., \& Toneatto, T. (2017).
+  Mapping the Mind: A Model Based on Therav\=ada Buddhist Texts and
+  Practices. \textit{Contemporary Buddhism}, 18(1), 140--164.
+
+\item Hastings, J. (Ed.). (1910). \textit{Encyclopaedia of Religion
+  and Ethics}, Vol.~3. T.\,\&\,T.~Clark, Edinburgh.
+
+\item Packer, C., Wooders, S., Lin, K., Fang, V., Patil, S.~G.,
+  Stoica, I., \& Gonzalez, J.~E. (2023). MemGPT: Towards LLMs as
+  Operating Systems. \textit{arXiv preprint} arXiv:2310.08560.
+
+\item Dumas, A. (1844). \textit{Le Comte de Monte-Cristo}. Project
+  Gutenberg edition, 117 chapters, 2.79\,MB plain text.
+
+\item Lemire, D., Kaser, O., Kurz, N., Deri, L., O'Hara, C.,
+  Saint-Jacques, F., \& Ssi-Yan-Kai, G. (2018). Roaring Bitmaps:
+  Implementation of an Optimized Software Library.
+  \textit{Software: Practice and Experience}, 48(4), 867--895.
+\end{enumerate}
+
+\end{document}

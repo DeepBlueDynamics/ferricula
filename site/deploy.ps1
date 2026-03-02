@@ -1,5 +1,5 @@
 # ============================================================
-# ferricula.nuts.services -> Google Cloud Run deployment
+# ferricula.com -> Google Cloud Run deployment
 # Run from the site/ directory containing:
 #   index.html, Dockerfile, nginx.conf
 # ============================================================
@@ -8,7 +8,7 @@ param(
     [string]$ProjectId = "gnosis-459403",
     [string]$Region = "us-central1",
     [string]$Service = "ferricula-site",
-    [string]$Domain = "ferricula.nuts.services"
+    [string]$Domain = "ferricula.com"
 )
 
 $Image = "gcr.io/$ProjectId/$Service"

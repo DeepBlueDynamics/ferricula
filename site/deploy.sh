@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# ferricula.nuts.services → Google Cloud Run deployment
+# ferricula.com → Google Cloud Run deployment
 # Run from the site/ directory containing:
 #   index.html, Dockerfile, nginx.conf
 # ============================================================
@@ -43,7 +43,7 @@ gcloud run deploy $SERVICE \
 echo "==> 5. Mapping custom domain"
 gcloud run domain-mappings create \
   --service $SERVICE \
-  --domain ferricula.nuts.services \
+  --domain ferricula.com \
   --region $REGION
 
 echo ""
@@ -58,5 +58,5 @@ echo "  CNAME  ferricula     ghs.googlehosted.com."
 echo ""
 echo "SSL cert is automatic. Provisioning takes 15-30 min."
 echo "Check status:  gcloud run domain-mappings describe \\"
-echo "  --domain ferricula.nuts.services --region $REGION"
+echo "  --domain ferricula.com --region $REGION"
 echo "============================================================"
