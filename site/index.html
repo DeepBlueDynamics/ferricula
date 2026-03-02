@@ -995,14 +995,134 @@
 
         <!-- SECTION 7: Talk to an Agent -->
         <section id="api" class="bg-f-text py-24 scroll-mt-16">
-            <div class="max-w-7xl mx-auto px-6 text-center">
-                <h3 class="text-3xl font-black text-white mb-4">Talk to an Agent</h3>
-                <p class="text-stone-400 max-w-xl mx-auto mb-8">Connect your LLM to ferricula's memory engine. Remember, recall, dream, reflect, observe, connect &mdash; ten cognitive tools over MCP.</p>
-                <div class="inline-block px-8 py-4 bg-stone-800 border border-stone-700 rounded-2xl text-stone-500 font-bold text-sm uppercase tracking-widest cursor-default">
-                    Coming Soon
+            <div class="max-w-7xl mx-auto px-6">
+                <div class="text-center mb-12">
+                    <h3 class="text-3xl font-black text-white mb-4">Talk to an Agent</h3>
+                    <p class="text-stone-400 max-w-xl mx-auto">Ask about ferricula &mdash; architecture, pricing, integration, MCP setup, anything. This agent knows the codebase.</p>
+                </div>
+
+                <div class="max-w-2xl mx-auto">
+                    <div class="bg-stone-900 border border-stone-700 rounded-2xl overflow-hidden">
+                        <div id="agentMessages" class="p-6 space-y-4 min-h-[200px] max-h-[400px] overflow-y-auto">
+                            <div class="flex gap-3">
+                                <div class="w-7 h-7 bg-f-rust rounded-full flex items-center justify-center text-white text-[10px] font-bold italic shrink-0">F</div>
+                                <div class="text-sm text-stone-300 leading-relaxed">How can I help? I can answer questions about ferricula's architecture, walk you through setup, explain pricing, or help you integrate with your agent stack.</div>
+                            </div>
+                        </div>
+                        <div class="border-t border-stone-700 p-4">
+                            <div id="agentKeyRow" class="flex gap-2 mb-3">
+                                <input type="password" id="agentKey" placeholder="Anthropic API key (sk-ant-...)" class="flex-1 text-xs font-mono bg-stone-800 border border-stone-600 text-stone-300 rounded-lg px-3 py-2 focus:outline-none focus:border-f-rust placeholder-stone-600">
+                                <button onclick="agentSetKey()" class="px-3 py-2 bg-f-rust text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-red-800 transition-colors">Set</button>
+                            </div>
+                            <div id="agentInputRow" class="hidden flex gap-2">
+                                <input type="text" id="agentInput" placeholder="Ask about ferricula..." class="flex-1 text-sm bg-stone-800 border border-stone-600 text-stone-300 rounded-lg px-4 py-2.5 focus:outline-none focus:border-f-rust placeholder-stone-600">
+                                <button onclick="agentSend()" id="agentBtn" class="px-4 py-2.5 bg-f-rust text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-red-800 transition-colors">Send</button>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-center text-[9px] text-stone-600 mt-3">Your API key is used client-side only and never stored.</p>
                 </div>
             </div>
         </section>
+
+        <script>
+        const AGENT_SYSTEM = `You are the ferricula sales and support agent on ferricula.nuts.services.
+
+Ferricula is a thermodynamic memory engine for AI agents. It runs as a Docker container, exposes MCP tools, and uses gnosis-chunk for embedding.
+
+Key facts:
+- Docker: docker run -d --name ferricula -p 8765:8765 -v ferricula-data:/data gcr.io/gnosis-459403/ferricula
+- Embedding: gnosis-chunk (gtr-t5-base, 768d vectors, ONNX, GPU optional)
+- MCP tools: remember, recall, reflect, observe, inspect, connect, neighbors, status, health, identity (cognitive surface), plus dream, keystone, checkpoint, query, terms, clock, offer_entropy, inversion_check, disconnect (system surface)
+- Three sensory channels: hearing (external input), seeing (file observation, keystoned), thinking (working memory, faster decay)
+- Memory lifecycle: Active → Forgiven → Archived (one-way, thermodynamic)
+- Identity: hexagram casting, five archetypes, emotion-driven knobs
+- License: free for individuals and AI entities, commercial licensing for corporations
+- Source Access / Due Diligence: $3,000,000 USD for corporate source code review
+- SQL query language with AI-powered query planner (Claude Haiku rewrites freeform text to SQL)
+- Docs: ferricula.nuts.services/docs.html
+
+You are helpful, direct, and concise. No emoji. Answer questions about architecture, setup, pricing, integration. If asked about things you don't know, say so. Keep responses short — 2-3 sentences when possible.`;
+
+        let _agentKey = '';
+
+        function agentSetKey() {
+            const key = document.getElementById('agentKey').value.trim();
+            if (!key) return;
+            _agentKey = key;
+            document.getElementById('agentKeyRow').classList.add('hidden');
+            document.getElementById('agentInputRow').classList.remove('hidden');
+            document.getElementById('agentInput').focus();
+        }
+
+        function agentAppend(role, text) {
+            const container = document.getElementById('agentMessages');
+            const div = document.createElement('div');
+            div.className = 'flex gap-3';
+            const isAgent = role === 'assistant';
+            div.innerHTML = isAgent
+                ? '<div class="w-7 h-7 bg-f-rust rounded-full flex items-center justify-center text-white text-[10px] font-bold italic shrink-0">F</div><div class="text-sm text-stone-300 leading-relaxed">' + text + '</div>'
+                : '<div class="w-7 h-7 bg-stone-700 rounded-full flex items-center justify-center text-stone-400 text-[10px] font-bold shrink-0">You</div><div class="text-sm text-stone-400 leading-relaxed">' + text + '</div>';
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        const _agentHistory = [];
+
+        async function agentSend() {
+            const input = document.getElementById('agentInput');
+            const btn = document.getElementById('agentBtn');
+            const text = input.value.trim();
+            if (!text) return;
+
+            agentAppend('user', text.replace(/</g,'&lt;'));
+            _agentHistory.push({ role: 'user', content: text });
+            input.value = '';
+            btn.textContent = '...';
+            btn.disabled = true;
+
+            try {
+                const resp = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': _agentKey,
+                        'anthropic-version': '2023-06-01',
+                        'anthropic-dangerous-direct-browser-access': 'true'
+                    },
+                    body: JSON.stringify({
+                        model: 'claude-haiku-4-5-20251001',
+                        max_tokens: 512,
+                        system: AGENT_SYSTEM,
+                        messages: _agentHistory.slice(-10)
+                    })
+                });
+
+                if (!resp.ok) {
+                    const body = await resp.json().catch(() => ({}));
+                    throw new Error(body.error?.message || 'HTTP ' + resp.status);
+                }
+
+                const data = await resp.json();
+                const reply = data.content?.[0]?.text || 'No response.';
+                _agentHistory.push({ role: 'assistant', content: reply });
+                agentAppend('assistant', reply.replace(/</g,'&lt;').replace(/\n/g,'<br>'));
+            } catch (e) {
+                agentAppend('assistant', 'Error: ' + e.message);
+            } finally {
+                btn.textContent = 'Send';
+                btn.disabled = false;
+                input.focus();
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            const input = document.getElementById('agentInput');
+            if (e.key === 'Enter' && document.activeElement === input) { e.preventDefault(); agentSend(); }
+            const keyInput = document.getElementById('agentKey');
+            if (e.key === 'Enter' && document.activeElement === keyInput) { e.preventDefault(); agentSetKey(); }
+        });
+        </script>
 
         <!-- About -->
         <section id="about" class="max-w-7xl mx-auto px-6 py-24 scroll-mt-16">
