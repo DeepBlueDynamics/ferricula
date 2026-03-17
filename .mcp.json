@@ -4,11 +4,11 @@
       "type": "stdio",
       "command": "python",
       "args": [
-        "C:/Users/kord/Code/gnosis/ferricula/ferricula/tools/ferricula-mcp.py"
+        "C:/Users/kordl/Code/Gnosis/ferricula/tools/ferricula-mcp.py"
       ],
       "env": {
         "NO_COLOR": "1",
-        "FERRICULA_SURFACE": "cognitive",
+        "FERRICULA_SURFACE": "all",
         "RADIO_URL": "http://localhost:9080",
         "CLOCK_TICK_SECS": "60",
         "CHONK_URL": "http://localhost:8080",
