@@ -20,6 +20,34 @@ pub struct InversionCheck {
     pub quality: f32,
 }
 
+/// Call chonk to embed text, return the embedding vector.
+/// Applies Pali translation layer before embedding so both vocabularies
+/// (Abhidhamma Pali + computational English) land in the same vector space.
+pub fn embed_text(chonk_url: &str, text: &str) -> Option<Vec<f32>> {
+    let expanded = crate::pali::expand(text);
+    let body = serde_json::json!({ "text": expanded }).to_string();
+    let response = chonk_post(chonk_url, "/memory/_mcp/ingest", &body)?;
+    let val: serde_json::Value = serde_json::from_str(&response).ok()?;
+    // Top-level embedding or nested in chunks[0]
+    if let Some(emb) = val.get("embedding").and_then(|v| v.as_array()) {
+        return Some(
+            emb.iter()
+                .filter_map(|x| x.as_f64().map(|f| f as f32))
+                .collect(),
+        );
+    }
+    val.get("chunks")?
+        .as_array()?
+        .first()?
+        .get("embedding")?
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_f64().map(|f| f as f32))
+                .collect()
+        })
+}
+
 /// Call chonk `/invert` with a vector, return approximate text.
 pub fn invert_vector(chonk_url: &str, vector: &[f32]) -> Option<String> {
     let body = serde_json::json!({ "embedding": vector }).to_string();
@@ -79,63 +107,103 @@ pub fn check_inversion_with_data(
     })
 }
 
-// --- HTTP helpers (raw TcpStream, same pattern as clock.rs) ---
+// --- HTTP/HTTPS helpers ---
 
-fn parse_host_port(url: &str) -> Option<(String, u16)> {
-    let stripped = url.strip_prefix("http://").unwrap_or(url);
+struct ParsedUrl {
+    host: String,
+    port: u16,
+    tls: bool,
+}
+
+fn parse_url(url: &str) -> Option<ParsedUrl> {
+    let tls = url.starts_with("https://");
+    let stripped = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url)
+        .trim_end_matches('/');
+
     if let Some(colon) = stripped.rfind(':') {
         let h = &stripped[..colon];
-        let p = stripped[colon + 1..]
-            .trim_end_matches('/')
-            .parse::<u16>()
-            .ok()?;
-        Some((h.to_string(), p))
+        let p = stripped[colon + 1..].parse::<u16>().ok()?;
+        Some(ParsedUrl { host: h.to_string(), port: p, tls })
     } else {
-        Some((stripped.trim_end_matches('/').to_string(), 8080))
+        let port = if tls { 443 } else { 8080 };
+        Some(ParsedUrl { host: stripped.to_string(), port, tls })
     }
 }
 
-fn chonk_post(base_url: &str, path: &str, body: &str) -> Option<String> {
-    let (host, port) = parse_host_port(base_url)?;
-    let addr = format!("{host}:{port}");
-    let mut stream =
-        TcpStream::connect_timeout(&addr.parse().ok()?, Duration::from_millis(2000)).ok()?;
-    stream
-        .set_read_timeout(Some(Duration::from_millis(5000)))
-        .ok()?;
+/// Send an HTTP request over plain TCP or TLS, return response body.
+fn http_request(base_url: &str, method: &str, path: &str, body: Option<&str>) -> Option<String> {
+    let parsed = parse_url(base_url)?;
+    let addr = format!("{}:{}", parsed.host, parsed.port);
 
-    let request = format!(
-        "POST {path} HTTP/1.0\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    stream.write_all(request.as_bytes()).ok()?;
-    stream.flush().ok()?;
+    let request = if let Some(body) = body {
+        format!(
+            "{method} {path} HTTP/1.0\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            parsed.host, body.len()
+        )
+    } else {
+        format!(
+            "{method} {path} HTTP/1.0\r\nHost: {}\r\nConnection: close\r\n\r\n",
+            parsed.host
+        )
+    };
+
+    // Resolve hostname to SocketAddr — prefer IPv4 (Docker containers often lack IPv6)
+    use std::net::ToSocketAddrs;
+    let addrs: Vec<_> = addr.to_socket_addrs().ok()?.collect();
+    let sock_addr = addrs.iter().find(|a| a.is_ipv4()).or(addrs.first()).copied()?;
 
     let mut response = String::new();
-    stream.read_to_string(&mut response).ok()?;
+
+    if parsed.tls {
+        use std::sync::Arc;
+        let root_store = rustls::RootCertStore {
+            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+        };
+        let config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+        let host_owned = parsed.host.clone();
+        let server_name: rustls::pki_types::ServerName =
+            host_owned.try_into().ok()?;
+        let mut conn = rustls::ClientConnection::new(Arc::new(config), server_name).ok()?;
+        let mut sock = TcpStream::connect_timeout(&sock_addr, Duration::from_millis(5000)).ok()?;
+        sock.set_read_timeout(Some(Duration::from_millis(15000))).ok()?;
+        let mut tls = rustls::Stream::new(&mut conn, &mut sock);
+        tls.write_all(request.as_bytes()).ok()?;
+        tls.flush().ok()?;
+        // Read in chunks — HTTP/1.0 servers close without TLS close_notify,
+        // which makes read_to_string return Err. Read what we can instead.
+        let mut buf = [0u8; 4096];
+        loop {
+            match tls.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => response.push_str(&String::from_utf8_lossy(&buf[..n])),
+                Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionAborted => break,
+                Err(_) => break,
+            }
+        }
+    } else {
+        let mut stream = TcpStream::connect_timeout(&sock_addr, Duration::from_millis(2000)).ok()?;
+        stream.set_read_timeout(Some(Duration::from_millis(5000))).ok()?;
+        stream.write_all(request.as_bytes()).ok()?;
+        stream.flush().ok()?;
+        stream.read_to_string(&mut response).ok()?;
+    }
 
     let body_start = response.find("\r\n\r\n").map(|i| i + 4)?;
     Some(response[body_start..].to_string())
 }
 
+fn chonk_post(base_url: &str, path: &str, body: &str) -> Option<String> {
+    http_request(base_url, "POST", path, Some(body))
+}
+
 fn chonk_get(base_url: &str, path: &str) -> Option<String> {
-    let (host, port) = parse_host_port(base_url)?;
-    let addr = format!("{host}:{port}");
-    let mut stream =
-        TcpStream::connect_timeout(&addr.parse().ok()?, Duration::from_millis(1000)).ok()?;
-    stream
-        .set_read_timeout(Some(Duration::from_millis(2000)))
-        .ok()?;
-
-    let request = format!("GET {path} HTTP/1.0\r\nHost: {host}\r\nConnection: close\r\n\r\n");
-    stream.write_all(request.as_bytes()).ok()?;
-    stream.flush().ok()?;
-
-    let mut response = String::new();
-    stream.read_to_string(&mut response).ok()?;
-
-    let body_start = response.find("\r\n\r\n").map(|i| i + 4)?;
-    Some(response[body_start..].to_string())
+    http_request(base_url, "GET", path, None)
 }
 
 #[cfg(test)]
@@ -172,16 +240,34 @@ mod tests {
     }
 
     #[test]
-    fn parse_host_port_standard() {
-        let (h, p) = parse_host_port("http://localhost:8080").unwrap();
-        assert_eq!(h, "localhost");
-        assert_eq!(p, 8080);
+    fn parse_url_http() {
+        let p = parse_url("http://localhost:8080").unwrap();
+        assert_eq!(p.host, "localhost");
+        assert_eq!(p.port, 8080);
+        assert!(!p.tls);
     }
 
     #[test]
-    fn parse_host_port_no_port() {
-        let (h, p) = parse_host_port("http://localhost").unwrap();
-        assert_eq!(h, "localhost");
-        assert_eq!(p, 8080);
+    fn parse_url_http_no_port() {
+        let p = parse_url("http://localhost").unwrap();
+        assert_eq!(p.host, "localhost");
+        assert_eq!(p.port, 8080);
+        assert!(!p.tls);
+    }
+
+    #[test]
+    fn parse_url_https() {
+        let p = parse_url("https://shivvr.nuts.services").unwrap();
+        assert_eq!(p.host, "shivvr.nuts.services");
+        assert_eq!(p.port, 443);
+        assert!(p.tls);
+    }
+
+    #[test]
+    fn parse_url_https_with_port() {
+        let p = parse_url("https://example.com:8443").unwrap();
+        assert_eq!(p.host, "example.com");
+        assert_eq!(p.port, 8443);
+        assert!(p.tls);
     }
 }

@@ -157,7 +157,22 @@ fn clock_loop(config: ClockConfig, tx: mpsc::Sender<ClockEvent>, telemetry: Arc<
     let mut was_available = false;
 
     loop {
-        thread::sleep(Duration::from_secs(config.tick_secs));
+        // Entropy-varied tick: ±30% jitter seeded from reservoir (or system entropy)
+        let jitter_byte = if reservoir.len() > 0 {
+            reservoir.consume(1).first().copied().unwrap_or(128)
+        } else {
+            // Fallback: system entropy when reservoir is empty
+            let mut buf = [0u8; 1];
+            #[cfg(unix)]
+            { let _ = std::fs::File::open("/dev/urandom").and_then(|mut f| { use std::io::Read; f.read_exact(&mut buf) }); }
+            #[cfg(windows)]
+            { buf[0] = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().subsec_nanos() & 0xFF) as u8; }
+            buf[0]
+        };
+        // Map byte 0-255 to multiplier 0.70..1.30
+        let multiplier = 0.70 + (jitter_byte as f64 / 255.0) * 0.60;
+        let tick_ms = (config.tick_secs as f64 * 1000.0 * multiplier) as u64;
+        thread::sleep(Duration::from_millis(tick_ms.max(1000)));
 
         let (epoch, entropy, available) =
             fetch_time_and_entropy(&config.radio_host, config.radio_port);
@@ -399,5 +414,17 @@ mod tests {
         };
         assert_eq!(config.radio_port, 9080);
         assert_eq!(config.tick_secs, 60);
+    }
+
+    #[test]
+    fn tick_jitter_range() {
+        // Verify entropy byte maps to ±30% of base tick
+        let base_secs: f64 = 60.0;
+        for byte_val in [0u8, 128, 255] {
+            let multiplier = 0.70 + (byte_val as f64 / 255.0) * 0.60;
+            let tick_ms = (base_secs * 1000.0 * multiplier) as u64;
+            assert!(tick_ms >= 42000, "min tick too low: {tick_ms}"); // 60 * 0.70 = 42s
+            assert!(tick_ms <= 78000, "max tick too high: {tick_ms}"); // 60 * 1.30 = 78s
+        }
     }
 }

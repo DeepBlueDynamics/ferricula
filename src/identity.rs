@@ -45,6 +45,30 @@ impl IdentityState {
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
     }
+
+    /// Activate archetypes based on dream intensity tier.
+    pub fn activate_for_tier(&mut self, tier: crate::archetypes::ActivationTier) {
+        let active = tier.active_roles();
+        for arch in &mut self.archetypes {
+            if active.contains(&arch.role) {
+                arch.activate();
+            } else {
+                arch.deactivate();
+            }
+        }
+    }
+
+    /// Activate archetypes based on a completed dream report.
+    pub fn activate_from_report(&mut self, report: &crate::dream::DreamReport) {
+        for arch in &mut self.archetypes {
+            let name = arch.role.name().to_string();
+            if report.active_archetypes.contains(&name) {
+                arch.activate();
+            } else {
+                arch.deactivate();
+            }
+        }
+    }
 }
 
 /// Load existing identity or create a new one.

@@ -880,17 +880,19 @@ def ferricula_keystone(id: int) -> str:
 
 
 @_tool("connect")
-def ferricula_connect(a: int, b: int, label: str = "related") -> str:
+def ferricula_connect(a: int, b: int, label: str = "related", kind: str = "semantic") -> str:
     """Create a graph edge between two memories.
 
     Args:
-        a: First memory ID.
-        b: Second memory ID.
+        a: Source memory ID (cause, for causal edges).
+        b: Target memory ID (effect, for causal edges).
         label: Edge label (e.g. "caused", "related", "contradicts").
+        kind: Edge directionality: "semantic" (bidirectional) or "causal" (directed a->b only).
+              Causal edges enforce the arrow of time — b cannot traverse back to a.
     """
     if _use_http():
-        return _get_http().post("connect", json.dumps({"a": a, "b": b, "label": label}))
-    return _get_repl().send(f"connect {a} {b} {label}")
+        return _get_http().post("connect", json.dumps({"a": a, "b": b, "label": label, "kind": kind}))
+    return _get_repl().send(f"connect {a} {b} {label} {kind}")
 
 
 @_tool("disconnect")

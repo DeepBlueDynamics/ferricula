@@ -71,6 +71,31 @@ pub enum HttpCommand {
         id: u32,
         reply: mpsc::SyncSender<String>,
     },
+    Skg {
+        reply: mpsc::SyncSender<String>,
+    },
+    SkgTerm {
+        term: String,
+        reply: mpsc::SyncSender<String>,
+    },
+    Delete {
+        id: u32,
+        reply: mpsc::SyncSender<String>,
+    },
+    MaxId {
+        reply: mpsc::SyncSender<String>,
+    },
+    Search {
+        body: String,
+        reply: mpsc::SyncSender<String>,
+    },
+    Hybrid {
+        body: String,
+        reply: mpsc::SyncSender<String>,
+    },
+    Glossary {
+        reply: mpsc::SyncSender<String>,
+    },
 }
 
 /// Spawn the HTTP server thread.
@@ -282,6 +307,53 @@ fn dispatch(
                 reply: reply_tx,
             }
             .send_and_recv(http_tx, reply_rx)?
+        }
+        ("GET", ["skg"]) => {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            HttpCommand::Skg { reply: reply_tx }.send_and_recv(http_tx, reply_rx)?
+        }
+        ("GET", ["skg", term]) => {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            HttpCommand::SkgTerm {
+                term: term.to_string(),
+                reply: reply_tx,
+            }
+            .send_and_recv(http_tx, reply_rx)?
+        }
+        ("DELETE", ["delete", id_str]) | ("POST", ["delete", id_str]) => {
+            let id = id_str
+                .parse::<u32>()
+                .map_err(|_| "invalid id".to_string())?;
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            HttpCommand::Delete {
+                id,
+                reply: reply_tx,
+            }
+            .send_and_recv(http_tx, reply_rx)?
+        }
+        ("GET", ["maxid"]) => {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            HttpCommand::MaxId { reply: reply_tx }.send_and_recv(http_tx, reply_rx)?
+        }
+        ("POST", ["search"]) => {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            HttpCommand::Search {
+                body,
+                reply: reply_tx,
+            }
+            .send_and_recv(http_tx, reply_rx)?
+        }
+        ("POST", ["hybrid"]) => {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            HttpCommand::Hybrid {
+                body,
+                reply: reply_tx,
+            }
+            .send_and_recv(http_tx, reply_rx)?
+        }
+        ("GET", ["glossary"]) => {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            HttpCommand::Glossary { reply: reply_tx }.send_and_recv(http_tx, reply_rx)?
         }
         _ => return Err(format!("unknown route: {method} {url}")),
     };

@@ -501,16 +501,16 @@ docker run -d --name chonk -p 8080:8080 \
                             <div class="p-3 bg-f-bg rounded-lg border border-f-border">
                                 <div class="flex items-center justify-between">
                                     <span class="text-xs font-bold text-f-text font-mono">connect</span>
-                                    <span class="text-[9px] text-f-muted">a, b, label</span>
+                                    <span class="text-[9px] text-f-muted">a, b, label, kind</span>
                                 </div>
-                                <p class="text-[10px] text-f-muted mt-1">Create a labeled graph edge between two memories (caused, related, contradicts, etc.).</p>
+                                <p class="text-[10px] text-f-muted mt-1">Create a graph edge between two memories. <code>kind</code>: &ldquo;semantic&rdquo; (bidirectional, default) or &ldquo;causal&rdquo; (directed a&rarr;b only &mdash; enforces the arrow of time).</p>
                             </div>
                             <div class="p-3 bg-f-bg rounded-lg border border-f-border">
                                 <div class="flex items-center justify-between">
                                     <span class="text-xs font-bold text-f-text font-mono">neighbors</span>
                                     <span class="text-[9px] text-f-muted">id</span>
                                 </div>
-                                <p class="text-[10px] text-f-muted mt-1">Browse graph connections for a memory. Shows edge labels, weights, and neighbor fidelity.</p>
+                                <p class="text-[10px] text-f-muted mt-1">Browse graph connections for a memory. Shows edge labels, weights, directionality (&harr; or &rarr;), and neighbor fidelity. Causal predecessors listed separately.</p>
                             </div>
                             <div class="p-3 bg-f-bg rounded-lg border border-f-border">
                                 <div class="flex items-center justify-between">

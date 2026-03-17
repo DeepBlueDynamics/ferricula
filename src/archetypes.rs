@@ -72,6 +72,18 @@ pub struct Archetype {
     pub state: ArchetypeState,
 }
 
+impl Archetype {
+    pub fn activate(&mut self) {
+        self.active = true;
+        self.state = ArchetypeState::Listening;
+    }
+
+    pub fn deactivate(&mut self) {
+        self.active = false;
+        self.state = ArchetypeState::Dormant;
+    }
+}
+
 /// Cast all 5 archetypes from identity entropy.
 ///
 /// Each archetype gets 6 entropy bytes offset by its role index.

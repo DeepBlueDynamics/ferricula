@@ -2,10 +2,13 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
+use crate::archetypes::ArchetypeRole;
 use crate::engine::Engine;
-use crate::graph::MemoryGraph;
+use crate::graph::{EdgeKind, MemoryGraph};
 use crate::inversion;
 use crate::memory::{LifecycleState, MemoryStore, Provenance};
+use crate::prime_tree::PrimeTree;
+use crate::skg::{SkgState, SkgUpdateSummary};
 
 /// Report from a single dream cycle.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -18,6 +21,10 @@ pub struct DreamReport {
     pub pruned: u32,
     pub ghost_echoes: u32,
     pub keystones_reviewed: u32,
+    pub active_archetypes: Vec<String>,
+    pub edges_created: u32,
+    pub keystones_promoted: u32,
+    pub skg_summary: SkgUpdateSummary,
 }
 
 /// Cosine similarity threshold for consolidation grouping.
@@ -30,9 +37,11 @@ pub fn dream_cycle(
     store: &mut MemoryStore,
     engine: &Engine,
     graph: &mut MemoryGraph,
+    skg: &mut SkgState,
+    prime_tree: &PrimeTree,
     chonk_url: Option<&str>,
 ) -> DreamReport {
-    dream_cycle_with_intensity(store, engine, graph, 1.0, &[], chonk_url)
+    dream_cycle_with_intensity(store, engine, graph, skg, prime_tree, 1.0, &[], chonk_url)
 }
 
 /// Run one dream cycle with entropy-modulated decay.
@@ -45,12 +54,19 @@ pub fn dream_cycle_with_intensity(
     store: &mut MemoryStore,
     engine: &Engine,
     graph: &mut MemoryGraph,
+    skg: &mut SkgState,
+    prime_tree: &PrimeTree,
     intensity: f32,
     entropy_seed: &[u8],
     chonk_url: Option<&str>,
 ) -> DreamReport {
     let mut report = DreamReport::default();
     let intensity = intensity.clamp(0.0, 1.0);
+
+    // Archetype activation — determines which behaviors fire this dream
+    let tier = crate::archetypes::activation_tier(intensity);
+    let active_roles = tier.active_roles();
+    report.active_archetypes = active_roles.iter().map(|r| r.name().to_string()).collect();
 
     let ids: Vec<u32> = store.iter().map(|(&id, _)| id).collect();
 
@@ -100,10 +116,21 @@ pub fn dream_cycle_with_intensity(
     for group in groups {
         if group.len() >= 2 {
             let count = group.len() as u32;
-            consolidate_group(store, graph, &group);
+            let edges = consolidate_group(store, graph, &group);
             report.consolidated += count;
+            report.edges_created += edges;
         }
     }
+
+    // Phase 3.5: Semantic edge discovery (Intuition archetype — the Weaver)
+    if active_roles.contains(&ArchetypeRole::Intuition) {
+        let edges = discover_semantic_edges(store, engine, graph, 5);
+        report.edges_created += edges;
+    }
+
+    // Phase 3.6: SKG Weber update — track co-occurrence velocity/acceleration
+    let skg_summary = skg.update(prime_tree, store, engine, 20);
+    report.skg_summary = skg_summary;
 
     // Phase 4: Neglect — grow alpha for stale memories.
     for &id in &ids {
@@ -114,8 +141,11 @@ pub fn dream_cycle_with_intensity(
         }
     }
 
-    // Phase 5: Keystone review.
+    // Phase 5: Keystone review (Ethics archetype — the Guardian).
     report.keystones_reviewed = store.keystones().len() as u32;
+    if active_roles.contains(&ArchetypeRole::Ethics) {
+        report.keystones_promoted = review_keystones(store);
+    }
 
     // Phase 6: Archive old forgiven records (only those forgiven BEFORE this cycle), prune zeroed archived.
     for id in pre_forgiven {
@@ -140,9 +170,9 @@ pub fn dream_cycle_with_intensity(
             if let Some(url) = chonk_url {
                 if let Some(row) = engine.get(id) {
                     if !row.vector.is_empty() {
-                        let neighbors = graph.neighbors(id);
-                        if !neighbors.is_empty() {
-                            if let Some(echo) = extract_ghost_echo(url, &row.vector) {
+                        if let Some(echo) = extract_ghost_echo(url, &row.vector) {
+                            let neighbors = graph.neighbors(id);
+                            if !neighbors.is_empty() {
                                 // Attach the echo as labeled edges to surviving neighbors.
                                 for neighbor in neighbors.iter() {
                                     graph.connect(
@@ -150,9 +180,13 @@ pub fn dream_cycle_with_intensity(
                                         neighbor, // self-edge carries the label
                                         format!("echo:{}", echo),
                                         0.1, // low weight — it's a ghost
+                                        EdgeKind::Semantic,
                                     );
                                     report.ghost_echoes += 1;
                                 }
+                            } else {
+                                // Orphan ghost: no neighbors, but echo was extracted
+                                report.ghost_echoes += 1;
                             }
                         }
                     }
@@ -240,9 +274,10 @@ fn find_consolidation_groups(engine: &Engine, active_ids: &[u32]) -> Vec<Vec<u32
 }
 
 /// Merge a group: highest-fidelity member absorbs the rest.
-fn consolidate_group(store: &mut MemoryStore, graph: &mut MemoryGraph, group: &[u32]) {
+/// Returns the number of new graph edges created.
+fn consolidate_group(store: &mut MemoryStore, graph: &mut MemoryGraph, group: &[u32]) -> u32 {
     if group.is_empty() {
-        return;
+        return 0;
     }
 
     // Survivor = highest fidelity
@@ -252,7 +287,7 @@ fn consolidate_group(store: &mut MemoryStore, graph: &mut MemoryGraph, group: &[
         .max_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(id, _)| id);
     let Some(survivor_id) = survivor_id else {
-        return;
+        return 0;
     };
 
     let absorbed: Vec<u32> = group
@@ -260,6 +295,8 @@ fn consolidate_group(store: &mut MemoryStore, graph: &mut MemoryGraph, group: &[
         .copied()
         .filter(|&id| id != survivor_id)
         .collect();
+
+    let mut edges_created = 0u32;
 
     // Update survivor metadata
     if let Some(survivor) = store.get_mut(survivor_id) {
@@ -275,16 +312,26 @@ fn consolidate_group(store: &mut MemoryStore, graph: &mut MemoryGraph, group: &[
         let neighbors = graph.neighbors(absorbed_id);
         for neighbor in neighbors.iter() {
             if neighbor != survivor_id {
-                graph.connect(survivor_id, neighbor, "consolidated".to_string(), 0.5);
+                graph.connect(survivor_id, neighbor, "consolidated".to_string(), 0.5, EdgeKind::Semantic);
+                edges_created += 1;
             }
         }
         graph.remove_node(absorbed_id);
+
+        // Audit edge: survivor absorbed this memory (created after remove_node
+        // so it isn't cleaned up by the cascade).
+        // CAUSAL: directed from survivor → absorbed. The absorbed memory
+        // cannot traverse backward to re-enter the survivor's context.
+        graph.connect(survivor_id, absorbed_id, "absorbed".to_string(), 1.0, EdgeKind::Causal);
+        edges_created += 1;
 
         if let Some(record) = store.get_mut(absorbed_id) {
             record.forgive();
             record.archive();
         }
     }
+
+    edges_created
 }
 
 /// Deathbed confession: invert a dying memory's vector to text via chonk,
@@ -354,6 +401,87 @@ fn inversion_post(base_url: &str, path: &str, body: &str) -> Option<String> {
     Some(response[body_start..].to_string())
 }
 
+/// Phase 3.5: Discover semantic edges between high-fidelity active memories.
+/// Finds pairs with cosine similarity in [0.7, CONSOLIDATION_THRESHOLD) that
+/// aren't already connected. Capped at `max_edges` new edges per dream.
+fn discover_semantic_edges(
+    store: &MemoryStore,
+    engine: &Engine,
+    graph: &mut MemoryGraph,
+    max_edges: u32,
+) -> u32 {
+    // Top 20 active memories by fidelity
+    let mut candidates: Vec<(u32, f32)> = store
+        .in_state(LifecycleState::Active)
+        .into_iter()
+        .map(|r| (r.id, r.fidelity))
+        .collect();
+    candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
+    candidates.truncate(20);
+
+    let mut edges_created = 0u32;
+
+    for i in 0..candidates.len() {
+        if edges_created >= max_edges {
+            break;
+        }
+        let (id_a, _) = candidates[i];
+        let Some(row_a) = engine.get(id_a) else {
+            continue;
+        };
+        if row_a.vector.is_empty() {
+            continue;
+        }
+
+        for j in (i + 1)..candidates.len() {
+            if edges_created >= max_edges {
+                break;
+            }
+            let (id_b, _) = candidates[j];
+            let Some(row_b) = engine.get(id_b) else {
+                continue;
+            };
+            if row_b.vector.len() != row_a.vector.len() {
+                continue;
+            }
+
+            let sim = cosine_sim(&row_a.vector, &row_b.vector);
+            if sim >= 0.7 && sim < CONSOLIDATION_THRESHOLD {
+                if graph.edge(id_a, id_b).is_none() {
+                    graph.connect(id_a, id_b, "semantic".to_string(), sim, EdgeKind::Semantic);
+                    edges_created += 1;
+                }
+            }
+        }
+    }
+
+    edges_created
+}
+
+/// Phase 5 (Ethics): Promote heavily-recalled, high-fidelity memories to keystone.
+/// Returns the number of promotions (capped at 1 per dream cycle).
+fn review_keystones(store: &mut MemoryStore) -> u32 {
+    let mut promote_id = None;
+    for (&_id, record) in store.iter() {
+        if !record.keystone
+            && record.state == LifecycleState::Active
+            && record.recall_count >= 5
+            && record.fidelity > 0.95
+        {
+            promote_id = Some(record.id);
+            break; // Cap: promote at most 1
+        }
+    }
+
+    if let Some(id) = promote_id {
+        if let Some(record) = store.get_mut(id) {
+            record.keystone = true;
+            return 1;
+        }
+    }
+    0
+}
+
 fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
     let mut dot = 0.0_f32;
     let mut na = 0.0_f32;
@@ -394,11 +522,13 @@ mod tests {
         let mut engine = Engine::new();
         let mut store = MemoryStore::new();
         let mut graph = MemoryGraph::new();
+        let mut skg = SkgState::new();
+        let prime_tree = PrimeTree::new();
 
         engine.upsert(make_row(1, vec![1.0, 0.0])).unwrap();
         store.insert(make_record(1));
 
-        let report = dream_cycle(&mut store, &engine, &mut graph, None);
+        let report = dream_cycle(&mut store, &engine, &mut graph, &mut skg, &prime_tree, None);
         assert_eq!(report.decayed, 1);
         assert!(store.get(1).unwrap().fidelity < 1.0);
     }
@@ -408,13 +538,15 @@ mod tests {
         let mut engine = Engine::new();
         let mut store = MemoryStore::new();
         let mut graph = MemoryGraph::new();
+        let mut skg = SkgState::new();
+        let prime_tree = PrimeTree::new();
 
         engine.upsert(make_row(1, vec![1.0, 0.0])).unwrap();
         let mut r = make_record(1);
         r.fidelity = FIDELITY_GATE - 0.01; // just below gate
         store.insert(r);
 
-        let report = dream_cycle(&mut store, &engine, &mut graph, None);
+        let report = dream_cycle(&mut store, &engine, &mut graph, &mut skg, &prime_tree, None);
         // Decay ticks first (reduces fidelity further), then forgive
         assert!(report.forgiven >= 1);
         assert_eq!(store.get(1).unwrap().state, LifecycleState::Forgiven);
@@ -425,6 +557,8 @@ mod tests {
         let mut engine = Engine::new();
         let mut store = MemoryStore::new();
         let mut graph = MemoryGraph::new();
+        let mut skg = SkgState::new();
+        let prime_tree = PrimeTree::new();
 
         // Two nearly identical vectors
         engine.upsert(make_row(1, vec![1.0, 0.0, 0.0])).unwrap();
@@ -436,7 +570,7 @@ mod tests {
         store.insert(make_record(2));
         store.insert(make_record(3));
 
-        let report = dream_cycle(&mut store, &engine, &mut graph, None);
+        let report = dream_cycle(&mut store, &engine, &mut graph, &mut skg, &prime_tree, None);
         assert!(report.consolidated >= 2);
     }
 
@@ -445,13 +579,15 @@ mod tests {
         let mut engine = Engine::new();
         let mut store = MemoryStore::new();
         let mut graph = MemoryGraph::new();
+        let mut skg = SkgState::new();
+        let prime_tree = PrimeTree::new();
 
         engine.upsert(make_row(1, vec![1.0, 0.0])).unwrap();
         let mut r = make_record(1);
         r.keystone = true;
         store.insert(r);
 
-        dream_cycle(&mut store, &engine, &mut graph, None);
+        dream_cycle(&mut store, &engine, &mut graph, &mut skg, &prime_tree, None);
         // Keystone should remain at full fidelity
         assert_eq!(store.get(1).unwrap().fidelity, 1.0);
     }
@@ -461,6 +597,8 @@ mod tests {
         let mut engine = Engine::new();
         let mut store = MemoryStore::new();
         let mut graph = MemoryGraph::new();
+        let mut skg = SkgState::new();
+        let prime_tree = PrimeTree::new();
 
         engine.upsert(make_row(1, vec![1.0, 0.0, 0.0])).unwrap();
         engine.upsert(make_row(2, vec![0.99, 0.01, 0.0])).unwrap();
@@ -471,9 +609,9 @@ mod tests {
         store.insert(make_record(3));
 
         // Memory 2 is connected to memory 3
-        graph.connect(2, 3, "link".into(), 1.0);
+        graph.connect(2, 3, "link".into(), 1.0, EdgeKind::Semantic);
 
-        dream_cycle(&mut store, &engine, &mut graph, None);
+        dream_cycle(&mut store, &engine, &mut graph, &mut skg, &prime_tree, None);
 
         // After consolidation, survivor (1 or 2) should be connected to 3
         let survivor = if store
@@ -525,13 +663,15 @@ mod tests {
         let mut engine = Engine::new();
         let mut store = MemoryStore::new();
         let mut graph = MemoryGraph::new();
+        let mut skg = SkgState::new();
+        let prime_tree = PrimeTree::new();
 
         for i in 1..=4 {
             engine.upsert(make_row(i, vec![i as f32, 0.0])).unwrap();
             store.insert(make_record(i));
         }
 
-        let report = dream_cycle_with_intensity(&mut store, &engine, &mut graph, 0.5, &[], None);
+        let report = dream_cycle_with_intensity(&mut store, &engine, &mut graph, &mut skg, &prime_tree, 0.5, &[], None);
         // ceil(4 * 0.5) = 2 should be decayed
         assert_eq!(report.decayed, 2);
     }
@@ -541,12 +681,14 @@ mod tests {
         let mut engine = Engine::new();
         let mut store = MemoryStore::new();
         let mut graph = MemoryGraph::new();
+        let mut skg = SkgState::new();
+        let prime_tree = PrimeTree::new();
 
         engine.upsert(make_row(1, vec![1.0, 0.0])).unwrap();
         store.insert(make_record(1));
 
         // dream_cycle wraps dream_cycle_with_intensity at 1.0
-        let report = dream_cycle(&mut store, &engine, &mut graph, None);
+        let report = dream_cycle(&mut store, &engine, &mut graph, &mut skg, &prime_tree, None);
         assert_eq!(report.decayed, 1);
         assert!(store.get(1).unwrap().fidelity < 1.0);
     }

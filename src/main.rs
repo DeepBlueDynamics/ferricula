@@ -10,8 +10,16 @@ use ferricula::http::HttpCommand;
 use ferricula::identity::IdentityState;
 use ferricula::inversion;
 use ferricula::memory::{Emotion, MemoryRecord};
-use ferricula::planner::Planner;
-use ferricula::{DistanceMetric, DurableEngine, Row};
+use ferricula::planner::{Planner, PlannerResult};
+use ferricula::corpus::SearchEngine;
+use ferricula::tokenizer;
+use ferricula::{DistanceMetric, DurableEngine, EdgeKind, Row};
+
+/// A recall that's waiting for the planner thread to finish LLM rewriting.
+struct PendingRecall {
+    rx: mpsc::Receiver<PlannerResult>,
+    reply: mpsc::SyncSender<String>,
+}
 
 /// Load .env file from cwd or binary's directory. Sets vars only if not already in env.
 fn load_dotenv() {
@@ -82,7 +90,7 @@ fn main() -> Result<()> {
     let chonk_url =
         std::env::var("CHONK_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
     let identity_entropy = get_identity_entropy();
-    let (identity, is_new) = ferricula::identity::load_or_create(&data_dir, &identity_entropy);
+    let (mut identity, is_new) = ferricula::identity::load_or_create(&data_dir, &identity_entropy);
     if is_new {
         let (row, record) = ferricula::identity::create_anchor(&identity);
         // Best-effort: anchor vector is 4d, engine might have different dim
@@ -107,7 +115,7 @@ fn main() -> Result<()> {
 
     if serve_mode {
         // HTTP service mode
-        eprintln!("ferricula v0.3.0 (serve mode)");
+        eprintln!("ferricula v{} (serve mode)", env!("CARGO_PKG_VERSION"));
         eprintln!("data dir: {data_dir}");
         eprintln!("identity: {} ({})", identity.agent_id, identity.name);
 
@@ -119,6 +127,20 @@ fn main() -> Result<()> {
 
         let _http_handle = ferricula::http::spawn_http(serve_port, http_tx, http_flag.clone());
 
+        let mut pending_recalls: Vec<PendingRecall> = Vec::new();
+
+        // Build search engine from existing memories
+        let mut search_engine = SearchEngine::new();
+        for row in db.engine().rows_iter() {
+            if let Some(text) = row.tags.get("text") {
+                search_engine.add_document(row.id, text);
+            }
+        }
+        if search_engine.corpus.n_docs > 0 {
+            search_engine.recalibrate();
+            eprintln!("[search] indexed {} docs, avgdl={:.1}", search_engine.corpus.n_docs, search_engine.corpus.avgdl());
+        }
+
         loop {
             if should_stop.load(Ordering::SeqCst) {
                 eprintln!("[serve] signal received, checkpointing...");
@@ -128,22 +150,25 @@ fn main() -> Result<()> {
                 break;
             }
 
-            process_clock_events(&mut db, &clock_rx, &chonk_url);
+            process_clock_events(&mut db, &mut identity, &clock_rx, &chonk_url);
             process_http_commands(
                 &mut db,
                 &planner,
                 &clock_telemetry,
-                &identity,
+                &mut identity,
                 &chonk_url,
                 &http_rx,
+                &mut pending_recalls,
+                &mut search_engine,
             );
+            process_pending_recalls(&mut db, &mut pending_recalls, &chonk_url);
 
             // Small sleep to avoid busy-spinning when no events
             std::thread::sleep(Duration::from_millis(10));
         }
     } else {
         // REPL mode (original behavior)
-        println!("ferricula v0.3.0");
+        println!("ferricula v{}", env!("CARGO_PKG_VERSION"));
         println!("data dir: {data_dir}");
         println!("identity: {} ({})", identity.agent_id, identity.name);
         print_help();
@@ -177,7 +202,7 @@ fn main() -> Result<()> {
                 break;
             }
 
-            process_clock_events(&mut db, &clock_rx, &chonk_url);
+            process_clock_events(&mut db, &mut identity, &clock_rx, &chonk_url);
 
             match stdin_rx.recv_timeout(Duration::from_millis(500)) {
                 Ok(line) => {
@@ -205,7 +230,7 @@ fn main() -> Result<()> {
                         continue;
                     }
 
-                    match handle_command(&mut db, &planner, &clock_telemetry, &chonk_url, &line) {
+                    match handle_command(&mut db, &planner, &mut identity, &clock_telemetry, &chonk_url, &line) {
                         Ok(output) => println!("{output}"),
                         Err(err) => eprintln!("error: {err:#}"),
                     }
@@ -241,7 +266,7 @@ fn get_identity_entropy() -> Vec<u8> {
 }
 
 /// Drain all pending clock events and act on them.
-fn process_clock_events(db: &mut DurableEngine, clock_rx: &mpsc::Receiver<ClockEvent>, chonk_url: &str) {
+fn process_clock_events(db: &mut DurableEngine, identity: &mut IdentityState, clock_rx: &mpsc::Receiver<ClockEvent>, chonk_url: &str) {
     let chonk = if inversion::chonk_available(chonk_url) { Some(chonk_url) } else { None };
     while let Ok(event) = clock_rx.try_recv() {
         match event {
@@ -251,10 +276,13 @@ fn process_clock_events(db: &mut DurableEngine, clock_rx: &mpsc::Receiver<ClockE
                 entropy_bytes,
             } => {
                 let report = db.dream_with_intensity(intensity, &[], chonk);
+                identity.activate_from_report(&report);
                 eprintln!(
                     "[clock] dream epoch={epoch} intensity={intensity:.2} entropy={entropy_bytes}B \
-                     decayed={} forgiven={} consolidated={} pruned={} ghosts={}",
-                    report.decayed, report.forgiven, report.consolidated, report.pruned, report.ghost_echoes,
+                     decayed={} forgiven={} consolidated={} pruned={} ghosts={} edges={} archetypes=[{}]",
+                    report.decayed, report.forgiven, report.consolidated, report.pruned,
+                    report.ghost_echoes, report.edges_created,
+                    report.active_archetypes.join(","),
                 );
             }
             ClockEvent::RadioStatus { available, message } => {
@@ -272,19 +300,68 @@ fn process_clock_events(db: &mut DurableEngine, clock_rx: &mpsc::Receiver<ClockE
     }
 }
 
+/// Drain completed planner results — execute SQL and reply to HTTP clients.
+fn process_pending_recalls(
+    db: &mut DurableEngine,
+    pending: &mut Vec<PendingRecall>,
+    chonk_url: &str,
+) {
+    let mut completed = Vec::new();
+    for (i, pr) in pending.iter().enumerate() {
+        match pr.rx.try_recv() {
+            Ok(result) => {
+                let output = cmd_recall_sql_embed(db, &result.sql, Some(chonk_url))
+                    .unwrap_or_else(|e| json_error(&e));
+                let _ = pr.reply.send(json_wrap("result", &output));
+                if result.llm_used {
+                    eprintln!("[planner] LLM rewrite completed: {:?} -> {:?}",
+                        &result.input[..result.input.len().min(40)],
+                        &result.sql[..result.sql.len().min(60)]);
+                }
+                completed.push(i);
+            }
+            Err(mpsc::TryRecvError::Empty) => {} // still waiting
+            Err(mpsc::TryRecvError::Disconnected) => {
+                // Planner thread died — send error reply
+                let _ = pr.reply.send(json_wrap("result", "error: planner thread died"));
+                completed.push(i);
+            }
+        }
+    }
+    // Remove completed in reverse order to preserve indices
+    for i in completed.into_iter().rev() {
+        pending.swap_remove(i);
+    }
+}
+
 /// Process pending HTTP commands (non-blocking drain).
+/// Recalls that need LLM rewriting are deferred to `pending_recalls`.
 fn process_http_commands(
     db: &mut DurableEngine,
     planner: &Planner,
     telemetry: &Arc<ClockTelemetry>,
-    identity: &IdentityState,
+    identity: &mut IdentityState,
     chonk_url: &str,
     http_rx: &mpsc::Receiver<HttpCommand>,
+    pending_recalls: &mut Vec<PendingRecall>,
+    search_engine: &mut SearchEngine,
 ) {
     while let Ok(cmd) = http_rx.try_recv() {
         match cmd {
             HttpCommand::Remember { body, reply } => {
+                // Parse body to extract text for search indexing before cmd_remember
+                let text_for_index = serde_json::from_str::<serde_json::Value>(&body)
+                    .ok()
+                    .and_then(|v| {
+                        let id = v.get("id")?.as_u64()? as u32;
+                        let text = v.get("tags")?.get("text")?.as_str()?.to_string();
+                        Some((id, text))
+                    });
                 let result = cmd_remember(db, &body).unwrap_or_else(|e| json_error(&e));
+                // Update search engine with new doc
+                if let Some((id, text)) = text_for_index {
+                    search_engine.add_document(id, &text);
+                }
                 let _ = reply.send(json_wrap("result", &result));
             }
             HttpCommand::Recall { body, reply } => {
@@ -293,11 +370,22 @@ fn process_http_commands(
                     .ok()
                     .and_then(|v| v.get("query")?.as_str().map(|s| s.to_string()))
                     .unwrap_or(body);
-                let result = cmd_recall(db, planner, &query_text).unwrap_or_else(|e| json_error(&e));
-                let _ = reply.send(json_wrap("result", &result));
+
+                if planner.needs_llm(&query_text) {
+                    // Defer: spawn LLM rewrite on background thread
+                    let rx = planner.spawn_llm_rewrite(&query_text);
+                    pending_recalls.push(PendingRecall { rx, reply });
+                    eprintln!("[planner] deferred recall to LLM thread ({} pending)", pending_recalls.len());
+                } else {
+                    // Fast path: sync rewrite (SQL passthrough or rule-based)
+                    let sql = planner.rewrite_query_sync(&query_text)
+                        .unwrap_or_else(|e| format!("error: {e}"));
+                    let result = cmd_recall_sql_embed(db, &sql, Some(chonk_url)).unwrap_or_else(|e| json_error(&e));
+                    let _ = reply.send(json_wrap("result", &result));
+                }
             }
             HttpCommand::Dream { body: _, reply } => {
-                let result = cmd_dream(db, chonk_url).unwrap_or_else(|e| json_error(&e));
+                let result = cmd_dream(db, identity, chonk_url).unwrap_or_else(|e| json_error(&e));
                 let _ = reply.send(json_wrap("result", &result));
             }
             HttpCommand::Status { reply } => {
@@ -309,7 +397,7 @@ fn process_http_commands(
                 let _ = reply.send(json_wrap("result", &result));
             }
             HttpCommand::Offer { body, reply } => {
-                let result = cmd_offer(db, &body, chonk_url).unwrap_or_else(|e| json_error(&e));
+                let result = cmd_offer(db, identity, &body, chonk_url).unwrap_or_else(|e| json_error(&e));
                 let _ = reply.send(json_wrap("result", &result));
             }
             HttpCommand::Keystone { id, reply } => {
@@ -340,7 +428,11 @@ fn process_http_commands(
                 let _ = reply.send(json_wrap("result", &result));
             }
             HttpCommand::Identity { reply } => {
-                let _ = reply.send(identity.to_json());
+                // Inject runtime version into identity JSON
+                let mut val: serde_json::Value = serde_json::from_str(&identity.to_json())
+                    .unwrap_or_else(|_| serde_json::json!({}));
+                val["version"] = serde_json::json!(env!("CARGO_PKG_VERSION"));
+                let _ = reply.send(serde_json::to_string_pretty(&val).unwrap_or_default());
             }
             HttpCommand::GetRow { id, reply } => {
                 let result = cmd_get(db, &id.to_string()).unwrap_or_else(|e| json_error(&e));
@@ -353,6 +445,38 @@ fn process_http_commands(
             HttpCommand::InversionCheck { id, reply } => {
                 let result = handle_inversion_check(db, chonk_url, id);
                 let _ = reply.send(result);
+            }
+            HttpCommand::Skg { reply } => {
+                let result = cmd_skg(db);
+                let _ = reply.send(result);
+            }
+            HttpCommand::SkgTerm { term, reply } => {
+                let result = cmd_skg_term(db, &term);
+                let _ = reply.send(result);
+            }
+            HttpCommand::Delete { id, reply } => {
+                search_engine.remove_document(id);
+                let result = match db.remove_memory(id) {
+                    Ok(true) => serde_json::json!({"deleted": true, "id": id}).to_string(),
+                    Ok(false) => serde_json::json!({"deleted": false, "id": id, "error": "not found"}).to_string(),
+                    Err(e) => json_error(&e),
+                };
+                let _ = reply.send(result);
+            }
+            HttpCommand::MaxId { reply } => {
+                let result = cmd_maxid(db).unwrap_or_else(|e| json_error(&e));
+                let _ = reply.send(json_wrap("maxid", &result));
+            }
+            HttpCommand::Search { body, reply } => {
+                let result = handle_search(db, search_engine, &body);
+                let _ = reply.send(result);
+            }
+            HttpCommand::Hybrid { body, reply } => {
+                let result = handle_hybrid(db, search_engine, &body, chonk_url);
+                let _ = reply.send(result);
+            }
+            HttpCommand::Glossary { reply } => {
+                let _ = reply.send(ferricula::pali::glossary_json());
             }
         }
     }
@@ -373,8 +497,13 @@ fn handle_connect_json(db: &mut DurableEngine, body: &str) -> Result<String> {
         .get("label")
         .and_then(|v| v.as_str())
         .unwrap_or("related");
-    db.connect(a, b, label.to_string(), 1.0)?;
-    Ok(format!("connected {a} <-> {b} [{label}]"))
+    let kind = match val.get("kind").and_then(|v| v.as_str()) {
+        Some("causal") => EdgeKind::Causal,
+        _ => EdgeKind::Semantic,
+    };
+    let arrow = if kind == EdgeKind::Causal { "->" } else { "<->" };
+    db.connect(a, b, label.to_string(), 1.0, kind)?;
+    Ok(format!("connected {a} {arrow} {b} [{label}]"))
 }
 
 /// Handle JSON disconnect body: {"a": N, "b": N}
@@ -428,6 +557,83 @@ fn handle_inversion_check(db: &DurableEngine, chonk_url: &str, id: u32) -> Strin
     }
 }
 
+/// Handle POST /search — BM25 ranked search.
+fn handle_search(db: &DurableEngine, search_engine: &SearchEngine, body: &str) -> String {
+    let val: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(e) => return serde_json::json!({"error": format!("{e}")}).to_string(),
+    };
+    let query = val.get("query").and_then(|v| v.as_str()).unwrap_or("");
+    let k = val.get("k").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+
+    let hits = search_engine.bm25_search(query, k, db.prime_tree());
+
+    let results: Vec<serde_json::Value> = hits
+        .iter()
+        .map(|h| {
+            let text = db
+                .engine()
+                .get(h.id)
+                .and_then(|r| r.tags.get("text").cloned())
+                .unwrap_or_default();
+            serde_json::json!({
+                "id": h.id,
+                "probability": (h.probability * 10000.0).round() / 10000.0,
+                "bm25": (h.bm25_score * 1000.0).round() / 1000.0,
+                "text": text,
+            })
+        })
+        .collect();
+
+    serde_json::json!({"results": results}).to_string()
+}
+
+/// Handle POST /hybrid — fused vector + BM25 search.
+fn handle_hybrid(db: &DurableEngine, search_engine: &SearchEngine, body: &str, chonk_url: &str) -> String {
+    let val: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(e) => return serde_json::json!({"error": format!("{e}")}).to_string(),
+    };
+    let query = val.get("query").and_then(|v| v.as_str()).unwrap_or("");
+    let k = val.get("k").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+    let weight = val.get("weight").and_then(|v| v.as_f64()).unwrap_or(0.5);
+
+    // Get vector hits from chonk embed + cosine search
+    let vector_hits: Vec<(u32, f32)> = if inversion::chonk_available(chonk_url) {
+        // Embed query via chonk
+        match inversion::embed_text(chonk_url, query) {
+            Some(qvec) => {
+                let hits = db.engine().vector_topk(&qvec, k * 2, DistanceMetric::Cosine, None);
+                hits.into_iter().map(|h| (h.id, h.score)).collect()
+            }
+            None => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    };
+
+    let hits = search_engine.hybrid_search(query, k, weight, db.prime_tree(), &vector_hits);
+
+    let results: Vec<serde_json::Value> = hits
+        .iter()
+        .map(|h| {
+            let text = db
+                .engine()
+                .get(h.id)
+                .and_then(|r| r.tags.get("text").cloned())
+                .unwrap_or_default();
+            serde_json::json!({
+                "id": h.id,
+                "probability": (h.probability * 10000.0).round() / 10000.0,
+                "bm25": (h.bm25_score * 1000.0).round() / 1000.0,
+                "text": text,
+            })
+        })
+        .collect();
+
+    serde_json::json!({"results": results}).to_string()
+}
+
 /// Wrap a string result in JSON.
 fn json_wrap(key: &str, value: &str) -> String {
     serde_json::json!({ key: value }).to_string()
@@ -450,6 +656,7 @@ fn print_help() {
     println!("  disconnect <id1> <id2>       remove graph edge");
     println!("  neighbors <id>               show graph neighbors");
     println!("  terms                        list prime tree terms");
+    println!("  skg [term]                   semantic knowledge graph (Weber bracket)");
     println!("  upsert <json-row>            raw row upsert (no memory envelope)");
     println!("  delete <id>                  delete row");
     println!("  query <sql>                  raw SQL query");
@@ -468,6 +675,7 @@ fn print_help() {
 fn handle_command(
     db: &mut DurableEngine,
     planner: &Planner,
+    identity: &mut IdentityState,
     telemetry: &Arc<ClockTelemetry>,
     chonk_url: &str,
     line: &str,
@@ -481,8 +689,8 @@ fn handle_command(
 
     match cmd.as_str() {
         "remember" => cmd_remember(db, tail),
-        "recall" => cmd_recall(db, planner, tail),
-        "dream" => cmd_dream(db, chonk_url),
+        "recall" => cmd_recall(db, planner, chonk_url, tail),
+        "dream" => cmd_dream(db, identity, chonk_url),
         "status" => cmd_status(db),
         "inspect" => cmd_inspect(db, tail),
         "keystone" => cmd_keystone(db, tail),
@@ -490,8 +698,15 @@ fn handle_command(
         "disconnect" => cmd_disconnect(db, tail),
         "neighbors" => cmd_neighbors(db, tail),
         "terms" => cmd_terms(db),
+        "skg" => {
+            if tail.is_empty() {
+                Ok(cmd_skg(db))
+            } else {
+                Ok(cmd_skg_term(db, tail))
+            }
+        }
         "clock" => cmd_clock(telemetry),
-        "offer" => cmd_offer(db, tail, chonk_url),
+        "offer" => cmd_offer(db, identity, tail, chonk_url),
         "upsert" => {
             let row = parse_row_json(tail)?;
             db.upsert(row)?;
@@ -504,7 +719,7 @@ fn handle_command(
         }
         "query" => {
             let canonical = planner.rewrite_query(tail)?;
-            let result = db.execute_sql(&canonical)?;
+            let result = db.execute_sql_with_embed(&canonical, Some(chonk_url))?;
             Ok(format!("ids={:?}", result.ids))
         }
         "rewrite" => {
@@ -571,20 +786,39 @@ fn cmd_remember(db: &mut DurableEngine, tail: &str) -> Result<String> {
             (alpha as f32).clamp(ferricula::memory::ALPHA_MIN, ferricula::memory::ALPHA_MAX);
     }
 
-    let tag_values: Vec<String> = row.tags.values().map(|v| v.to_lowercase()).collect();
+    db.remember(row.clone(), record)?;
 
-    db.remember(row, record)?;
-
-    for term in &tag_values {
-        db.insert_term(term, id)?;
+    // Word-level stemmed terms from text tag (with Pali expansion)
+    let mut all_terms = Vec::new();
+    if let Some(text) = row.tags.get("text") {
+        let expanded = ferricula::pali::expand(text);
+        let terms = tokenizer::extract_terms(&expanded);
+        for term in &terms {
+            db.insert_term(term, id)?;
+        }
+        all_terms.extend(terms);
+    }
+    // Also index other tags as structured terms (channel:value, author:value, etc.)
+    for (key, val) in &row.tags {
+        if key != "text" {
+            let tag_term = format!("{}:{}", key, val.to_lowercase());
+            db.insert_term(&tag_term, id)?;
+            all_terms.push(tag_term);
+        }
     }
 
-    Ok(format!("remembered id={id} terms={tag_values:?}"))
+    Ok(format!("remembered id={id} terms={} indexed", all_terms.len()))
 }
 
-fn cmd_recall(db: &mut DurableEngine, planner: &Planner, tail: &str) -> Result<String> {
+/// Recall with planner rewrite (REPL mode — blocking LLM is acceptable).
+fn cmd_recall(db: &mut DurableEngine, planner: &Planner, chonk_url: &str, tail: &str) -> Result<String> {
     let canonical = planner.rewrite_query(tail)?;
-    let result = db.execute_sql(&canonical)?;
+    cmd_recall_sql_embed(db, &canonical, Some(chonk_url))
+}
+
+/// Recall with embed support — resolves embed('text') via chonk.
+fn cmd_recall_sql_embed(db: &mut DurableEngine, sql: &str, chonk_url: Option<&str>) -> Result<String> {
+    let result = db.execute_sql_with_embed(sql, chonk_url)?;
 
     for &id in &result.ids {
         if let Some(record) = db.memory_store_mut().get_mut(id) {
@@ -599,19 +833,31 @@ fn cmd_recall(db: &mut DurableEngine, planner: &Planner, tail: &str) -> Result<S
             .get(id)
             .map(|r| format!(" fidelity={:.3} recalls={}", r.fidelity, r.recall_count))
             .unwrap_or_default();
-        lines.push(format!("  id={id}{fidelity}"));
+        let text = db.engine().get(id)
+            .and_then(|row| row.tags.get("text").cloned())
+            .unwrap_or_default();
+        let text_trunc: &str = if text.len() > 200 {
+            // Find a char boundary at or before byte 200
+            let mut end = 200;
+            while end > 0 && !text.is_char_boundary(end) { end -= 1; }
+            &text[..end]
+        } else {
+            &text
+        };
+        lines.push(format!("  id={id}{fidelity} text={text_trunc}"));
     }
 
     Ok(format!(
-        "recalled {} memories:\n{}",
+        "sql: {sql}\nrecalled {} memories:\n{}",
         result.ids.len(),
         lines.join("\n")
     ))
 }
 
-fn cmd_dream(db: &mut DurableEngine, chonk_url: &str) -> Result<String> {
+fn cmd_dream(db: &mut DurableEngine, identity: &mut IdentityState, chonk_url: &str) -> Result<String> {
     let chonk = if inversion::chonk_available(chonk_url) { Some(chonk_url) } else { None };
     let report = db.dream(chonk);
+    identity.activate_from_report(&report);
     Ok(format_dream_report(&report))
 }
 
@@ -632,7 +878,7 @@ fn cmd_clock(telemetry: &Arc<ClockTelemetry>) -> Result<String> {
     ))
 }
 
-fn cmd_offer(db: &mut DurableEngine, tail: &str, chonk_url: &str) -> Result<String> {
+fn cmd_offer(db: &mut DurableEngine, identity: &mut IdentityState, tail: &str, chonk_url: &str) -> Result<String> {
     let hex = tail.trim();
     if hex.is_empty() {
         bail!("offer: provide hex-encoded entropy (e.g. 'offer deadbeef')");
@@ -644,6 +890,7 @@ fn cmd_offer(db: &mut DurableEngine, tail: &str, chonk_url: &str) -> Result<Stri
     let chonk = if inversion::chonk_available(chonk_url) { Some(chonk_url) } else { None };
     let intensity = (bytes.len() as f32 / 64.0).min(1.0);
     let report = db.dream_with_intensity(intensity, &bytes, chonk);
+    identity.activate_from_report(&report);
     Ok(format!(
         "offer accepted: {}B entropy, intensity={intensity:.2}\n{}",
         bytes.len(),
@@ -652,8 +899,11 @@ fn cmd_offer(db: &mut DurableEngine, tail: &str, chonk_url: &str) -> Result<Stri
 }
 
 fn format_dream_report(report: &ferricula::DreamReport) -> String {
+    let skg = &report.skg_summary;
+    let emerging: Vec<String> = skg.top_emerging.iter().map(|e| format!("{}~{}", e.term_a, e.term_b)).collect();
+    let decaying: Vec<String> = skg.top_decaying.iter().map(|e| format!("{}~{}", e.term_a, e.term_b)).collect();
     format!(
-        "dream complete:\n  ticks={}\n  decayed={}\n  forgiven={}\n  archived={}\n  consolidated={}\n  pruned={}\n  ghost_echoes={}\n  keystones_reviewed={}",
+        "dream complete:\n  ticks={}\n  decayed={}\n  forgiven={}\n  archived={}\n  consolidated={}\n  pruned={}\n  ghost_echoes={}\n  keystones_reviewed={}\n  edges_created={}\n  keystones_promoted={}\n  active_archetypes=[{}]\n  skg: sampled={} tracked={} emerging=[{}] decaying=[{}]",
         report.ticks,
         report.decayed,
         report.forgiven,
@@ -662,6 +912,13 @@ fn format_dream_report(report: &ferricula::DreamReport) -> String {
         report.pruned,
         report.ghost_echoes,
         report.keystones_reviewed,
+        report.edges_created,
+        report.keystones_promoted,
+        report.active_archetypes.join(","),
+        skg.pairs_sampled,
+        skg.pairs_tracked,
+        emerging.join(","),
+        decaying.join(","),
     )
 }
 
@@ -730,18 +987,20 @@ fn cmd_keystone(db: &mut DurableEngine, tail: &str) -> Result<String> {
 }
 
 fn cmd_connect(db: &mut DurableEngine, tail: &str) -> Result<String> {
-    let mut args = tail.splitn(3, ' ');
-    let a: u32 = args
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("connect: missing id1"))?
-        .parse()?;
-    let b: u32 = args
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("connect: missing id2"))?
-        .parse()?;
-    let label = args.next().unwrap_or("related").to_string();
-    db.connect(a, b, label.clone(), 1.0)?;
-    Ok(format!("connected {a} <-> {b} [{label}]"))
+    let parts: Vec<&str> = tail.split_whitespace().collect();
+    if parts.len() < 2 {
+        anyhow::bail!("connect: need at least two IDs");
+    }
+    let a: u32 = parts[0].parse()?;
+    let b: u32 = parts[1].parse()?;
+    let label = parts.get(2).copied().unwrap_or("related").to_string();
+    let kind = match parts.get(3).copied() {
+        Some("causal") => EdgeKind::Causal,
+        _ => EdgeKind::Semantic,
+    };
+    let arrow = if kind == EdgeKind::Causal { "->" } else { "<->" };
+    db.connect(a, b, label.clone(), 1.0, kind)?;
+    Ok(format!("connected {a} {arrow} {b} [{label}]"))
 }
 
 fn cmd_disconnect(db: &mut DurableEngine, tail: &str) -> Result<String> {
@@ -761,12 +1020,16 @@ fn cmd_disconnect(db: &mut DurableEngine, tail: &str) -> Result<String> {
 fn cmd_neighbors(db: &DurableEngine, tail: &str) -> Result<String> {
     let id: u32 = tail.parse()?;
     let neighbors = db.graph().neighbors(id);
+    let predecessors = db.graph().predecessors(id);
     let mut lines = Vec::new();
     for nid in neighbors.iter() {
         let edge_info = db
             .graph()
             .edge(id, nid)
-            .map(|e| format!(" [{}] w={:.2}", e.label, e.weight))
+            .map(|e| {
+                let arrow = if e.kind == EdgeKind::Causal { "->" } else { "<->" };
+                format!(" [{} {}] w={:.2}", e.label, arrow, e.weight)
+            })
             .unwrap_or_default();
         let fidelity_info = db
             .memory_store()
@@ -775,9 +1038,25 @@ fn cmd_neighbors(db: &DurableEngine, tail: &str) -> Result<String> {
             .unwrap_or_default();
         lines.push(format!("  {nid}{edge_info}{fidelity_info}"));
     }
+    if !predecessors.is_empty() {
+        lines.push("  --- causal predecessors ---".to_string());
+        for pid in predecessors.iter() {
+            let edge_info = db
+                .graph()
+                .edge(pid, id)
+                .map(|e| format!(" [{} <-] w={:.2}", e.label, e.weight))
+                .unwrap_or_default();
+            let fidelity_info = db
+                .memory_store()
+                .get(pid)
+                .map(|r| format!(" fidelity={:.3}", r.fidelity))
+                .unwrap_or_default();
+            lines.push(format!("  {pid}{edge_info}{fidelity_info}"));
+        }
+    }
+    let total = neighbors.len() + predecessors.len();
     Ok(format!(
-        "neighbors of {id} ({}):\n{}",
-        neighbors.len(),
+        "neighbors of {id} ({total}):\n{}",
         lines.join("\n")
     ))
 }
@@ -793,6 +1072,50 @@ fn cmd_terms(db: &DurableEngine) -> Result<String> {
         lines.push(format!("  {term}: {} members", members.len()));
     }
     Ok(format!("terms ({}):\n{}", terms.len(), lines.join("\n")))
+}
+
+fn cmd_skg(db: &DurableEngine) -> String {
+    let skg = db.skg();
+    let mut edges: Vec<ferricula::SkgEdge> = skg
+        .histories
+        .iter()
+        .map(|(key, hist)| ferricula::SkgEdge {
+            term_a: key.a.clone(),
+            term_b: key.b.clone(),
+            jaccard: hist.current_jaccard().unwrap_or(0.0),
+            velocity: hist.velocity(),
+            acceleration: hist.acceleration(),
+            weber_bracket: hist.weber_bracket(),
+            history_len: hist.len(),
+        })
+        .collect();
+
+    // Sort by |weber_bracket| desc
+    edges.sort_by(|a, b| {
+        let abs_a = a.weber_bracket.unwrap_or(0.0).abs();
+        let abs_b = b.weber_bracket.unwrap_or(0.0).abs();
+        abs_b.total_cmp(&abs_a)
+    });
+
+    let emerging: Vec<&ferricula::SkgEdge> = edges.iter().filter(|e| e.weber_bracket.map_or(false, |w| w > 0.0)).take(5).collect();
+    let decaying: Vec<&ferricula::SkgEdge> = edges.iter().filter(|e| e.weber_bracket.map_or(false, |w| w < 0.0)).take(5).collect();
+
+    serde_json::json!({
+        "dream_tick": skg.dream_tick,
+        "tracked_pairs": skg.histories.len(),
+        "top_emerging": emerging,
+        "top_decaying": decaying,
+    })
+    .to_string()
+}
+
+fn cmd_skg_term(db: &DurableEngine, term: &str) -> String {
+    let edges = db.skg().edges_for_term(term);
+    serde_json::json!({
+        "term": term,
+        "edges": edges,
+    })
+    .to_string()
 }
 
 fn cmd_maxid(db: &DurableEngine) -> Result<String> {
