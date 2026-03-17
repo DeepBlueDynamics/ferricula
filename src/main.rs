@@ -478,6 +478,12 @@ fn process_http_commands(
             HttpCommand::Glossary { reply } => {
                 let _ = reply.send(ferricula::pali::glossary_json());
             }
+<<<<<<< HEAD
+=======
+            HttpCommand::Dashboard { reply } => {
+                let _ = reply.send(build_dashboard(db, identity));
+            }
+>>>>>>> 2999a3d (http: serve dashboard on GET / with live brain status)
         }
     }
 }
@@ -919,6 +925,102 @@ fn format_dream_report(report: &ferricula::DreamReport) -> String {
         skg.pairs_tracked,
         emerging.join(","),
         decaying.join(","),
+<<<<<<< HEAD
+=======
+    )
+}
+
+fn build_dashboard(db: &DurableEngine, identity: &IdentityState) -> String {
+    let store = db.memory_store();
+    let active = store.in_state(ferricula::LifecycleState::Active).len();
+    let forgiven = store.in_state(ferricula::LifecycleState::Forgiven).len();
+    let archived = store.in_state(ferricula::LifecycleState::Archived).len();
+    let keystones = store.keystones().len();
+    let rows = db.engine().row_count();
+    let graph_nodes = db.graph().node_count();
+    let graph_edges = db.graph().edge_count();
+    let terms = db.prime_tree().root_count();
+
+    let id = &identity.name;
+    let hexagram = format!("hexagram {} — {}", identity.hexagram.number, identity.hexagram.name);
+    let horoscope = &identity.horoscope.sign_name;
+
+    format!(r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ferricula</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{background:#0c0a09;color:#e7e5e4;font-family:'Courier New',monospace;padding:2rem}}
+h1{{color:#b91c1c;font-size:1.5rem;margin-bottom:.25rem}}
+.ver{{color:#78716c;font-size:.75rem;margin-bottom:2rem}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:2rem}}
+.card{{background:#1c1917;border:1px solid #292524;border-radius:8px;padding:1rem}}
+.card h2{{color:#78716c;font-size:.6rem;text-transform:uppercase;letter-spacing:.15em;margin-bottom:.5rem}}
+.val{{font-size:1.5rem;font-weight:bold}}
+.active{{color:#059669}} .forgiven{{color:#d97706}} .archived{{color:#78716c}} .keystone{{color:#7c3aed}}
+.row{{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.25rem}}
+.tag{{background:#292524;border-radius:4px;padding:.15rem .4rem;font-size:.7rem;color:#a8a29e}}
+.id-block{{background:#1c1917;border:1px solid #292524;border-radius:8px;padding:1rem;margin-bottom:2rem}}
+.id-block h2{{color:#b91c1c;font-size:.7rem;text-transform:uppercase;letter-spacing:.15em;margin-bottom:.5rem}}
+.id-name{{font-size:1.1rem;font-weight:bold;margin-bottom:.25rem}}
+.bar{{height:4px;border-radius:2px;margin-top:.5rem}}
+.bar-active{{background:#059669}} .bar-forgiven{{background:#d97706}} .bar-archived{{background:#292524}}
+a{{color:#b91c1c;text-decoration:none}} a:hover{{text-decoration:underline}}
+footer{{margin-top:2rem;color:#44403c;font-size:.65rem}}
+</style>
+</head>
+<body>
+<h1>FERRICULA</h1>
+<div class="ver">v{ver} &mdash; thermodynamic memory engine</div>
+
+<div class="id-block">
+<h2>Identity</h2>
+<div class="id-name">{id}</div>
+<div class="row">
+<span class="tag">{hexagram}</span>
+<span class="tag">{horoscope}</span>
+</div>
+</div>
+
+<div class="grid">
+<div class="card">
+<h2>Memories</h2>
+<div class="val">{rows}</div>
+<div class="row">
+<span class="tag active">active {active}</span>
+<span class="tag forgiven">forgiven {forgiven}</span>
+<span class="tag archived">archived {archived}</span>
+</div>
+</div>
+<div class="card">
+<h2>Keystones</h2>
+<div class="val keystone">{keystones}</div>
+</div>
+<div class="card">
+<h2>Graph</h2>
+<div class="val">{graph_nodes}</div>
+<div class="row">
+<span class="tag">{graph_edges} edges</span>
+</div>
+</div>
+<div class="card">
+<h2>Terms</h2>
+<div class="val">{terms}</div>
+</div>
+</div>
+
+<footer>
+<a href="/status">json status</a> &bull;
+<a href="https://ferricula.com">ferricula.com</a> &bull;
+<a href="https://github.com/DeepBlueDynamics/ferricula">source</a>
+</footer>
+</body>
+</html>"#,
+        ver = env!("CARGO_PKG_VERSION"),
+>>>>>>> 2999a3d (http: serve dashboard on GET / with live brain status)
     )
 }
 

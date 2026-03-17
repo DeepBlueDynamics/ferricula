@@ -96,6 +96,12 @@ pub enum HttpCommand {
     Glossary {
         reply: mpsc::SyncSender<String>,
     },
+<<<<<<< HEAD
+=======
+    Dashboard {
+        reply: mpsc::SyncSender<String>,
+    },
+>>>>>>> 2999a3d (http: serve dashboard on GET / with live brain status)
 }
 
 /// Spawn the HTTP server thread.
@@ -143,14 +149,16 @@ pub fn spawn_http(
                     Err(msg) => (400, format!("{{\"error\":\"{}\"}}", escape_json(&msg))),
                 };
 
+                let content_type = if url == "/" {
+                    &b"text/html; charset=utf-8"[..]
+                } else {
+                    &b"application/json"[..]
+                };
                 let response = tiny_http::Response::from_string(&response_body)
                     .with_status_code(status)
                     .with_header(
-                        tiny_http::Header::from_bytes(
-                            &b"Content-Type"[..],
-                            &b"application/json"[..],
-                        )
-                        .unwrap(),
+                        tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type)
+                            .unwrap(),
                     )
                     .with_header(
                         tiny_http::Header::from_bytes(
@@ -185,6 +193,10 @@ fn dispatch(
     let segments: Vec<&str> = path.trim_matches('/').split('/').collect();
 
     let cmd = match (method, segments.as_slice()) {
+        ("GET", [""]) => {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            HttpCommand::Dashboard { reply: reply_tx }.send_and_recv(http_tx, reply_rx)?
+        }
         ("POST", ["remember"]) => {
             let (reply_tx, reply_rx) = mpsc::sync_channel(1);
             HttpCommand::Remember {
