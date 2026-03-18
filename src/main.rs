@@ -478,12 +478,9 @@ fn process_http_commands(
             HttpCommand::Glossary { reply } => {
                 let _ = reply.send(ferricula::pali::glossary_json());
             }
-<<<<<<< HEAD
-=======
             HttpCommand::Dashboard { reply } => {
                 let _ = reply.send(build_dashboard(db, identity));
             }
->>>>>>> 2999a3d (http: serve dashboard on GET / with live brain status)
         }
     }
 }
@@ -925,8 +922,6 @@ fn format_dream_report(report: &ferricula::DreamReport) -> String {
         skg.pairs_tracked,
         emerging.join(","),
         decaying.join(","),
-<<<<<<< HEAD
-=======
     )
 }
 
@@ -1020,7 +1015,6 @@ footer{{margin-top:2rem;color:#44403c;font-size:.65rem}}
 </body>
 </html>"#,
         ver = env!("CARGO_PKG_VERSION"),
->>>>>>> 2999a3d (http: serve dashboard on GET / with live brain status)
     )
 }
 

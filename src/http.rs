@@ -96,12 +96,9 @@ pub enum HttpCommand {
     Glossary {
         reply: mpsc::SyncSender<String>,
     },
-<<<<<<< HEAD
-=======
     Dashboard {
         reply: mpsc::SyncSender<String>,
     },
->>>>>>> 2999a3d (http: serve dashboard on GET / with live brain status)
 }
 
 /// Spawn the HTTP server thread.

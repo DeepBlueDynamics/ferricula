@@ -155,12 +155,7 @@ impl Planner {
             return Ok(format!("SELECT id FROM docs WHERE {input}"));
         }
 
-        // Contains boolean operators → compound WHERE clause
-        if lower.contains(" and ") || lower.contains(" or ") {
-            return Ok(format!("SELECT id FROM docs WHERE {input}"));
-        }
-
-        // Contains = → tag query
+        // Contains = → tag query (possibly with boolean operators)
         if lower.contains(" = ") || lower.contains("='") {
             return Ok(format!("SELECT id FROM docs WHERE {input}"));
         }
