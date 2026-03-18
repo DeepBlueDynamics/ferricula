@@ -272,8 +272,10 @@ fn fetch_time_and_entropy(host: &str, port: u16) -> (Option<u64>, Vec<u8>, bool)
 
 /// Minimal HTTP/1.0 GET using raw TcpStream. Returns response body or None.
 fn http_get(addr: &str, host: &str, path: &str) -> Option<String> {
+    use std::net::ToSocketAddrs;
+    let sock_addr = addr.to_socket_addrs().ok()?.next()?;
     let mut stream =
-        TcpStream::connect_timeout(&addr.parse().ok()?, Duration::from_millis(500)).ok()?;
+        TcpStream::connect_timeout(&sock_addr, Duration::from_millis(500)).ok()?;
     stream
         .set_read_timeout(Some(Duration::from_millis(500)))
         .ok()?;
