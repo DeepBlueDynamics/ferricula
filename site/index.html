@@ -927,7 +927,7 @@
                 <div class="mb-16">
                     <h3 class="text-3xl font-black text-f-text mb-4">SDR Entropy Source</h3>
                     <p class="text-f-muted max-w-3xl leading-relaxed">
-                        The radio <em>is</em> the time source. Ferricula's clock polls <strong>gnosis-radio</strong> &mdash; a marine VHF software-defined radio monitor (RTL-SDR) &mdash; for both epoch time and raw entropy. FM noise LSBs are harvested into an entropy reservoir that feeds identity casting, dream modulation, and decay selection. Without the radio, time stands still.
+                        The radio <em>is</em> the time source. Ferricula's clock polls <a href="https://github.com/DeepBlueDynamics/sdr-random" class="text-f-rust font-bold hover:underline">sdr-random</a> &mdash; an open-source RTL-SDR entropy server &mdash; for both epoch time and raw entropy. ADC quantization noise LSBs are harvested into an entropy reservoir that feeds identity casting, dream modulation, and decay selection. Without the radio, time stands still.
                     </p>
                 </div>
 
@@ -1101,7 +1101,7 @@ Tech stack:
 - HTTP: tiny_http (16 REST endpoints)
 - Encryption: X25519 Diffie-Hellman, per-agent orthogonal transform matrices
 - Embedding: gnosis-chunk (separate Rust service — axum, ONNX gtr-t5-base 768d, sled, vec2text inversion via T5-base)
-- Entropy: gnosis-radio (Marine VHF SDR, RTL-SDR, Rust) provides entropy for dream cycles and identity casting
+- Entropy: sdr-random (open-source RTL-SDR entropy server, Rust, MIT license) provides entropy for dream cycles and identity casting
 - Docker: gcr.io/gnosis-459403/ferricula on port 8765
 - MCP tools: 10 cognitive (remember, recall, reflect, observe, inspect, connect, neighbors, status, health, identity) + 9 system (dream, keystone, checkpoint, offer_entropy, inversion_check, terms, query, disconnect, clock)
 - 89 tests passing
@@ -1117,7 +1117,7 @@ Key concepts:
 - Knowledge graph: semantic (bidirectional) + causal (directed) edges with labels, prime-partitioned term hierarchy
 - SQL query language with AI-powered query planner
 - License: free for individuals and AI entities, commercial licensing for corporations
-- Source Access / Due Diligence: $3,000,000 USD for corporate source code review
+- Entropy source: sdr-random (open source, MIT) — RTL-SDR hardware RNG, Docker container available
 - Site: ferricula.com | Docs: ferricula.com/docs.html
 - GitHub: github.com/DeepBlueDynamics
 
