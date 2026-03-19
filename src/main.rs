@@ -479,7 +479,7 @@ fn process_http_commands(
                 let _ = reply.send(ferricula::pali::glossary_json());
             }
             HttpCommand::Dashboard { reply } => {
-                let _ = reply.send(build_dashboard(db, identity));
+                let _ = reply.send(build_dashboard(db, identity, telemetry, chonk_url));
             }
         }
     }
@@ -925,7 +925,12 @@ fn format_dream_report(report: &ferricula::DreamReport) -> String {
     )
 }
 
-fn build_dashboard(db: &DurableEngine, identity: &IdentityState) -> String {
+fn build_dashboard(
+    db: &DurableEngine,
+    identity: &IdentityState,
+    telemetry: &Arc<ClockTelemetry>,
+    chonk_url: &str,
+) -> String {
     let store = db.memory_store();
     let active = store.in_state(ferricula::LifecycleState::Active).len();
     let forgiven = store.in_state(ferricula::LifecycleState::Forgiven).len();
@@ -937,39 +942,154 @@ fn build_dashboard(db: &DurableEngine, identity: &IdentityState) -> String {
     let terms = db.prime_tree().root_count();
 
     let id = &identity.name;
-    let hexagram = format!("hexagram {} — {}", identity.hexagram.number, identity.hexagram.name);
+    let hexagram = format!("hexagram {} &mdash; {}", identity.hexagram.number, identity.hexagram.name);
     let horoscope = &identity.horoscope.sign_name;
+    let primary_emotion = &identity.primary_emotion;
+    let secondary_emotion = &identity.secondary_emotion;
 
-    format!(r#"<!DOCTYPE html>
+    // Archetype info
+    let archetypes_html: String = identity
+        .archetypes
+        .iter()
+        .map(|a| {
+            let state_class = if a.active { "ok" } else { "off" };
+            format!(
+                r#"<span class="arch {state_class}">{}</span>"#,
+                a.role.name()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Clock / radio status
+    let ticks = telemetry.tick_count.load(Ordering::Relaxed);
+    let dreams = telemetry.dream_count.load(Ordering::Relaxed);
+    let entropy_life = telemetry.entropy_lifetime.load(Ordering::Relaxed);
+    let radio_up = telemetry.radio_available.load(Ordering::Relaxed);
+    let reservoir = telemetry.reservoir_bytes.load(Ordering::Relaxed);
+
+    // Service checks
+    let chonk_status = check_service(chonk_url, "/health");
+    let radio_url = std::env::var("RADIO_URL").unwrap_or_default();
+    let agent_key_set = std::env::var("AGENT_KEY").is_ok();
+
+    // Agent config from data volume
+    let agent_config = load_agent_toml();
+
+    // Determine state: fresh (no memories beyond anchor), trained, or active
+    let brain_state = if rows <= 1 {
+        "fresh"
+    } else if dreams == 0 {
+        "loaded"
+    } else {
+        "active"
+    };
+
+    // Build setup checklist
+    let chonk_check = if chonk_status {
+        r#"<div class="check ok">Embedding service (chonk)</div>"#
+    } else {
+        r#"<div class="check fail">Embedding service (chonk) &mdash; not reachable</div>"#
+    };
+    let radio_check = if radio_up {
+        r#"<div class="check ok">Entropy source (sdr-random)</div>"#
+    } else if radio_url.is_empty() {
+        r#"<div class="check warn">Entropy source &mdash; RADIO_URL not set (dreams are manual only)</div>"#
+    } else {
+        r#"<div class="check warn">Entropy source &mdash; not connected yet (waiting for first tick)</div>"#
+    };
+    let key_check = if agent_key_set {
+        r#"<div class="check ok">LLM query planner (AGENT_KEY)</div>"#
+    } else {
+        r#"<div class="check warn">LLM query planner &mdash; AGENT_KEY not set (rule-based fallback)</div>"#
+    };
+
+    // Agent personality block
+    let agent_block = if let Some(ref cfg) = agent_config {
+        format!(
+            r#"<div class="id-block">
+<h2>Agent</h2>
+<div class="id-name">{}</div>
+<div class="role">{}</div>
+<div class="row" style="margin-top:.5rem">
+<span class="tag">{}</span>
+</div>
+</div>"#,
+            cfg.name, cfg.role, cfg.voice
+        )
+    } else {
+        String::new()
+    };
+
+    // Next steps based on state
+    let next_steps = match brain_state {
+        "fresh" => r#"<div class="next">
+<h2>Next Steps</h2>
+<ol>
+<li>Feed me documents via <code>POST /remember</code> or the MCP <code>ferricula_remember</code> tool</li>
+<li>Seed the knowledge graph with <code>POST /connect</code> to link related memories</li>
+<li>Run dream cycles via <code>POST /dream</code> or <code>POST /offer</code> with entropy</li>
+<li>Talk to me via <code>POST /recall</code> or the MCP <code>ferricula_recall</code> tool</li>
+</ol>
+</div>"#,
+        "loaded" => r#"<div class="next">
+<h2>Next Steps</h2>
+<ol>
+<li>Run dream cycles to consolidate: <code>POST /dream</code> or <code>POST /offer</code></li>
+<li>Connect an entropy source for automatic dreams (set <code>RADIO_URL</code>)</li>
+<li>Start chatting via <code>POST /recall</code></li>
+</ol>
+</div>"#,
+        _ => "",
+    };
+
+    format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ferricula</title>
+<title>ferricula &mdash; {id}</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
-body{{background:#0c0a09;color:#e7e5e4;font-family:'Courier New',monospace;padding:2rem}}
+body{{background:#0c0a09;color:#e7e5e4;font-family:'Courier New',monospace;padding:2rem;max-width:900px;margin:0 auto}}
 h1{{color:#b91c1c;font-size:1.5rem;margin-bottom:.25rem}}
-.ver{{color:#78716c;font-size:.75rem;margin-bottom:2rem}}
-.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:2rem}}
+.ver{{color:#78716c;font-size:.75rem;margin-bottom:1.5rem}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;margin-bottom:1.5rem}}
 .card{{background:#1c1917;border:1px solid #292524;border-radius:8px;padding:1rem}}
-.card h2{{color:#78716c;font-size:.6rem;text-transform:uppercase;letter-spacing:.15em;margin-bottom:.5rem}}
+.card h2,.id-block h2,.checks h2,.next h2{{color:#78716c;font-size:.6rem;text-transform:uppercase;letter-spacing:.15em;margin-bottom:.5rem}}
 .val{{font-size:1.5rem;font-weight:bold}}
 .active{{color:#059669}} .forgiven{{color:#d97706}} .archived{{color:#78716c}} .keystone{{color:#7c3aed}}
 .row{{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.25rem}}
 .tag{{background:#292524;border-radius:4px;padding:.15rem .4rem;font-size:.7rem;color:#a8a29e}}
-.id-block{{background:#1c1917;border:1px solid #292524;border-radius:8px;padding:1rem;margin-bottom:2rem}}
-.id-block h2{{color:#b91c1c;font-size:.7rem;text-transform:uppercase;letter-spacing:.15em;margin-bottom:.5rem}}
+.id-block{{background:#1c1917;border:1px solid #292524;border-radius:8px;padding:1rem;margin-bottom:1rem}}
 .id-name{{font-size:1.1rem;font-weight:bold;margin-bottom:.25rem}}
-.bar{{height:4px;border-radius:2px;margin-top:.5rem}}
-.bar-active{{background:#059669}} .bar-forgiven{{background:#d97706}} .bar-archived{{background:#292524}}
+.role{{color:#a8a29e;font-size:.75rem}}
+.checks{{background:#1c1917;border:1px solid #292524;border-radius:8px;padding:1rem;margin-bottom:1rem}}
+.check{{font-size:.75rem;padding:.3rem 0;padding-left:1.5rem;position:relative}}
+.check::before{{position:absolute;left:0;width:1rem;text-align:center}}
+.check.ok{{color:#059669}} .check.ok::before{{content:"+"}}
+.check.fail{{color:#b91c1c}} .check.fail::before{{content:"x"}}
+.check.warn{{color:#d97706}} .check.warn::before{{content:"~"}}
+.arch{{display:inline-block;background:#292524;border-radius:4px;padding:.15rem .5rem;font-size:.65rem;color:#78716c;margin:.15rem .25rem .15rem 0}}
+.arch.ok{{color:#059669;border:1px solid #059669}}
+.arch.off{{color:#44403c;border:1px solid #292524}}
+.next{{background:#1c1917;border:1px solid #292524;border-radius:8px;padding:1rem;margin-bottom:1rem}}
+.next ol{{padding-left:1.25rem;font-size:.75rem;color:#a8a29e;line-height:1.8}}
+.next code{{background:#292524;padding:.1rem .3rem;border-radius:3px;font-size:.7rem;color:#e7e5e4}}
+.clock{{font-size:.7rem;color:#78716c;margin-top:.25rem}}
 a{{color:#b91c1c;text-decoration:none}} a:hover{{text-decoration:underline}}
 footer{{margin-top:2rem;color:#44403c;font-size:.65rem}}
+.state-badge{{display:inline-block;font-size:.6rem;text-transform:uppercase;letter-spacing:.1em;padding:.2rem .5rem;border-radius:4px;margin-left:.5rem}}
+.state-fresh{{background:#292524;color:#d97706}}
+.state-loaded{{background:#292524;color:#7c3aed}}
+.state-active{{background:#292524;color:#059669}}
 </style>
+<meta http-equiv="refresh" content="30">
 </head>
 <body>
-<h1>FERRICULA</h1>
-<div class="ver">v{ver} &mdash; thermodynamic memory engine</div>
+<h1>FERRICULA <span class="state-badge state-{brain_state}">{brain_state}</span></h1>
+<div class="ver">v{ver}</div>
 
 <div class="id-block">
 <h2>Identity</h2>
@@ -977,8 +1097,23 @@ footer{{margin-top:2rem;color:#44403c;font-size:.65rem}}
 <div class="row">
 <span class="tag">{hexagram}</span>
 <span class="tag">{horoscope}</span>
+<span class="tag">{primary_emotion} / {secondary_emotion}</span>
+</div>
+<div class="row" style="margin-top:.5rem">
+{archetypes_html}
 </div>
 </div>
+
+{agent_block}
+
+<div class="checks">
+<h2>Services</h2>
+{chonk_check}
+{radio_check}
+{key_check}
+</div>
+
+{next_steps}
 
 <div class="grid">
 <div class="card">
@@ -1005,10 +1140,19 @@ footer{{margin-top:2rem;color:#44403c;font-size:.65rem}}
 <h2>Terms</h2>
 <div class="val">{terms}</div>
 </div>
+<div class="card">
+<h2>Clock</h2>
+<div class="val">{dreams}</div>
+<div class="clock">ticks={ticks} entropy={entropy_life}B reservoir={reservoir}B</div>
+</div>
 </div>
 
 <footer>
-<a href="/status">json status</a> &bull;
+<a href="/status">status</a> &bull;
+<a href="/identity">identity</a> &bull;
+<a href="/clock">clock</a> &bull;
+<a href="/skg">skg</a> &bull;
+<a href="/terms">terms</a> &bull;
 <a href="https://ferricula.com">ferricula.com</a> &bull;
 <a href="https://github.com/DeepBlueDynamics/ferricula">source</a>
 </footer>
@@ -1016,6 +1160,79 @@ footer{{margin-top:2rem;color:#44403c;font-size:.65rem}}
 </html>"#,
         ver = env!("CARGO_PKG_VERSION"),
     )
+}
+
+/// Check if a service is reachable (quick TCP probe).
+fn check_service(url: &str, _path: &str) -> bool {
+    use std::net::{TcpStream, ToSocketAddrs};
+    let stripped = url.strip_prefix("http://").unwrap_or(url);
+    let stripped = stripped.strip_prefix("https://").unwrap_or(stripped);
+    let addr = stripped.trim_end_matches('/');
+    TcpStream::connect_timeout(
+        &addr
+            .to_socket_addrs()
+            .ok()
+            .and_then(|mut a| a.next())
+            .unwrap_or_else(|| "127.0.0.1:0".parse().unwrap()),
+        Duration::from_millis(500),
+    )
+    .is_ok()
+}
+
+/// Minimal agent config parsed from /data/agent.toml (if present).
+struct AgentConfig {
+    name: String,
+    role: String,
+    voice: String,
+}
+
+/// Try to load agent.toml from the data directory.
+fn load_agent_toml() -> Option<AgentConfig> {
+    // Check common data paths
+    for dir in &["./data", "/data"] {
+        let path = std::path::Path::new(dir).join("agent.toml");
+        if let Ok(contents) = std::fs::read_to_string(&path) {
+            return parse_agent_toml(&contents);
+        }
+    }
+    None
+}
+
+/// Minimal TOML parser — extracts name, role, voice from agent config.
+/// No toml crate dependency; just finds key = "value" lines.
+fn extract_toml_string(line: &str, key: &str) -> Option<String> {
+    let prefix = format!("{key} = ");
+    let line = line.trim();
+    if line.starts_with(&prefix) || line.starts_with(&format!("{key}=")) {
+        let val = line.split_once('=')?.1.trim();
+        let val = val.trim_matches('"').trim_matches('\'');
+        Some(val.to_string())
+    } else {
+        None
+    }
+}
+
+fn parse_agent_toml(contents: &str) -> Option<AgentConfig> {
+    let mut name = None;
+    let mut role = None;
+    let mut voice = None;
+
+    for line in contents.lines() {
+        let line = line.trim();
+        if let Some(val) = extract_toml_string(line, "name") {
+            name = Some(val);
+        } else if let Some(val) = extract_toml_string(line, "role") {
+            role = Some(val);
+        } else if let Some(val) = extract_toml_string(line, "voice") {
+            voice = Some(val);
+        }
+    }
+
+    Some(AgentConfig {
+        name: name.unwrap_or_else(|| "unnamed".to_string()),
+        role: role.unwrap_or_else(|| "general agent".to_string()),
+        voice: voice.unwrap_or_else(|| "default".to_string()),
+    })
 }
 
 fn cmd_status(db: &DurableEngine) -> Result<String> {
