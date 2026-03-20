@@ -389,7 +389,7 @@ fn process_http_commands(
                 let _ = reply.send(json_wrap("result", &result));
             }
             HttpCommand::Status { reply } => {
-                let result = cmd_status(db).unwrap_or_else(|e| json_error(&e));
+                let result = cmd_status(db, identity).unwrap_or_else(|e| json_error(&e));
                 let _ = reply.send(json_wrap("result", &result));
             }
             HttpCommand::Inspect { id, reply } => {
@@ -694,7 +694,7 @@ fn handle_command(
         "remember" => cmd_remember(db, tail),
         "recall" => cmd_recall(db, planner, chonk_url, tail),
         "dream" => cmd_dream(db, identity, chonk_url),
-        "status" => cmd_status(db),
+        "status" => cmd_status(db, identity),
         "inspect" => cmd_inspect(db, tail),
         "keystone" => cmd_keystone(db, tail),
         "connect" => cmd_connect(db, tail),
@@ -1235,15 +1235,24 @@ fn parse_agent_toml(contents: &str) -> Option<AgentConfig> {
     })
 }
 
-fn cmd_status(db: &DurableEngine) -> Result<String> {
+fn cmd_status(db: &DurableEngine, identity: &IdentityState) -> Result<String> {
     let store = db.memory_store();
     let active = store.in_state(ferricula::LifecycleState::Active).len();
     let forgiven = store.in_state(ferricula::LifecycleState::Forgiven).len();
     let archived = store.in_state(ferricula::LifecycleState::Archived).len();
     let keystones = store.keystones().len();
 
+    let agent_name = load_agent_toml()
+        .map(|a| a.name)
+        .unwrap_or_default();
+    let name_line = if agent_name.is_empty() {
+        identity.name.clone()
+    } else {
+        format!("{} ({})", agent_name, identity.name)
+    };
+
     Ok(format!(
-        "ferricula:\n  rows={}\n  memories={} (active={active} forgiven={forgiven} archived={archived})\n  keystones={keystones}\n  graph: {} nodes, {} edges\n  prime_tree: {} terms, {} nodes, {} members",
+        "{name_line}:\n  rows={}\n  memories={} (active={active} forgiven={forgiven} archived={archived})\n  keystones={keystones}\n  graph: {} nodes, {} edges\n  prime_tree: {} terms, {} nodes, {} members",
         db.engine().row_count(),
         store.len(),
         db.graph().node_count(),
