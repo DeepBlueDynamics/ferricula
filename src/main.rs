@@ -1004,8 +1004,18 @@ fn build_dashboard(
         r#"<div class="check warn">LLM query planner &mdash; AGENT_KEY not set (rule-based fallback)</div>"#
     };
 
-    // Agent personality block
-    let agent_block = if let Some(ref cfg) = agent_config {
+    // Agent name — from agent.toml if present, otherwise hexagram identity
+    let agent_name = agent_config
+        .as_ref()
+        .map(|c| c.name.clone())
+        .unwrap_or_else(|| "FERRICULA".to_string());
+    let agent_role_line = agent_config
+        .as_ref()
+        .map(|c| format!(r#"<div class="role" style="margin-top:.5rem">{}</div>"#, c.role))
+        .unwrap_or_default();
+
+    // Agent personality block (legacy — now merged into identity block)
+    let _agent_block = if let Some(ref cfg) = agent_config {
         format!(
             r#"<div class="id-block">
 <h2>Agent</h2>
@@ -1088,12 +1098,11 @@ footer{{margin-top:2rem;color:#44403c;font-size:.65rem}}
 <meta http-equiv="refresh" content="30">
 </head>
 <body>
-<h1>FERRICULA <span class="state-badge state-{brain_state}">{brain_state}</span></h1>
-<div class="ver">v{ver}</div>
+<h1>{agent_name} <span class="state-badge state-{brain_state}">{brain_state}</span></h1>
+<div class="ver">{id} &bull; v{ver}</div>
 
 <div class="id-block">
 <h2>Identity</h2>
-<div class="id-name">{id}</div>
 <div class="row">
 <span class="tag">{hexagram}</span>
 <span class="tag">{horoscope}</span>
@@ -1102,9 +1111,8 @@ footer{{margin-top:2rem;color:#44403c;font-size:.65rem}}
 <div class="row" style="margin-top:.5rem">
 {archetypes_html}
 </div>
+{agent_role_line}
 </div>
-
-{agent_block}
 
 <div class="checks">
 <h2>Services</h2>
