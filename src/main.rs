@@ -15,6 +15,34 @@ use ferricula::corpus::SearchEngine;
 use ferricula::tokenizer;
 use ferricula::{DistanceMetric, DurableEngine, EdgeKind, Row};
 
+/// Format a Unix epoch (seconds) as ISO 8601 UTC string.
+fn epoch_to_iso8601(epoch: u64) -> String {
+    const SECS_PER_MIN: u64 = 60;
+    const SECS_PER_HOUR: u64 = 3600;
+    const SECS_PER_DAY: u64 = 86400;
+
+    let days = epoch / SECS_PER_DAY;
+    let day_secs = epoch % SECS_PER_DAY;
+    let hour = day_secs / SECS_PER_HOUR;
+    let min = (day_secs % SECS_PER_HOUR) / SECS_PER_MIN;
+    let sec = day_secs % SECS_PER_MIN;
+
+    // Days since 1970-01-01 to Y-M-D (civil calendar)
+    // Algorithm from http://howardhinnant.github.io/date_algorithms.html
+    let z = days as i64 + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u64; // day of era [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, hour, min, sec)
+}
+
 /// A recall that's waiting for the planner thread to finish LLM rewriting.
 struct PendingRecall {
     rx: mpsc::Receiver<PlannerResult>,
@@ -1004,10 +1032,11 @@ fn build_dashboard(
         r#"<div class="check warn">LLM query planner &mdash; AGENT_KEY not set (rule-based fallback)</div>"#
     };
 
-    // Agent name — from agent.toml if present, otherwise hexagram identity
+    // Agent name — from agent.toml if present, FERRICULA_NAME env var, otherwise default
     let agent_name = agent_config
         .as_ref()
         .map(|c| c.name.clone())
+        .or_else(|| std::env::var("FERRICULA_NAME").ok())
         .unwrap_or_else(|| "FERRICULA".to_string());
     let agent_role_line = agent_config
         .as_ref()
@@ -1290,7 +1319,7 @@ fn cmd_inspect(db: &DurableEngine, tail: &str) -> Result<String> {
         .unwrap_or_else(|| "-".to_string());
 
     Ok(format!(
-        "memory id={id}:\n  state={:?}\n  fidelity={:.4}\n  decay_alpha={:.5} (effective={:.5})\n  keystone={}\n  recalls={}\n  consolidation_depth={}\n  importance={:.2}\n  emotion={emotion_str}\n  provenance={:?}\n  age={}s\n  staleness={}s\n  graph: degree={degree} neighbors={:?}",
+        "memory id={id}:\n  state={:?}\n  fidelity={:.4}\n  decay_alpha={:.5} (effective={:.5})\n  keystone={}\n  recalls={}\n  consolidation_depth={}\n  importance={:.2}\n  emotion={emotion_str}\n  provenance={:?}\n  created_at={}\n  last_recalled={}\n  age={}s\n  staleness={}s\n  graph: degree={degree} neighbors={:?}",
         record.state,
         record.fidelity,
         record.decay_alpha,
@@ -1300,6 +1329,8 @@ fn cmd_inspect(db: &DurableEngine, tail: &str) -> Result<String> {
         record.consolidation_depth,
         record.importance,
         record.provenance,
+        epoch_to_iso8601(record.created_at),
+        epoch_to_iso8601(record.last_recalled),
         record.age(),
         record.staleness(),
         neighbors.iter().collect::<Vec<_>>(),

@@ -7,6 +7,13 @@ Supports two transport modes:
   - subprocess (default): spawns ferricula binary, communicates via stdin/stdout
   - HTTP: connects to ferricula HTTP service (--http-url http://localhost:8765)
 
+Multi-instance: target different characters by name or port.
+  --port 8780              shorthand for --http-url http://localhost:8780
+  --name assis             label the instance (auto-discovered from /identity if omitted)
+  target="assis"           on any tool call, routes to that character's instance
+
+The `discover` tool scans ports and calls /identity to find running characters.
+
 Vectors are NEVER exposed to the LLM. Text is embedded via chonk
 (gnosis-chunk on :8080), stored internally, and inverted back to
 text on recall.
@@ -18,6 +25,8 @@ Three sensory channels with distinct decay profiles:
 
 Usage (registered in .mcp.json):
     python tools/ferricula-mcp.py [--data-dir ./data] [--http-url http://localhost:8765]
+    python tools/ferricula-mcp.py --port 8780
+    python tools/ferricula-mcp.py --port 8780 --name assis
 """
 
 import json
@@ -27,6 +36,7 @@ import threading
 import os
 import re
 import time
+import urllib.parse
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -331,16 +341,89 @@ class ReplProcess:
                 self.proc.wait(timeout=5)
 
 
+# ── Instance Registry ────────────────────────────────────────────────────
+# Maps character name (lowercase) → HttpClient. Allows targeting any
+# running ferricula instance by name or port.
+
+_registry: dict[str, HttpClient] = {}
+_port_map: dict[int, str] = {}  # port → character name
+
+
+def _register_instance(url: str, name: Optional[str] = None) -> Optional[str]:
+    """Register a ferricula instance. Auto-discovers name from /identity if not given.
+    Returns the discovered/given name, or None on failure."""
+    client = HttpClient(url)
+    if name is None:
+        try:
+            raw = client.get("identity")
+            data = json.loads(raw)
+            name = data.get("name", "").strip().lower()
+        except Exception:
+            pass
+    if not name:
+        # Fall back to port-based name
+        parsed = urllib.parse.urlparse(url)
+        name = f"port-{parsed.port or 8765}"
+    name = name.lower()
+    _registry[name] = client
+    # Track port
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.port:
+            _port_map[parsed.port] = name
+    except Exception:
+        pass
+    return name
+
+
+def _resolve_target(target: Optional[str] = None) -> Optional[HttpClient]:
+    """Resolve a target name/port to an HttpClient, or return default."""
+    if target:
+        t = target.strip().lower()
+        # Try name first
+        if t in _registry:
+            return _registry[t]
+        # Try as port number
+        try:
+            port = int(t)
+            if port in _port_map:
+                return _registry[_port_map[port]]
+            # Auto-register new port
+            url = f"http://localhost:{port}"
+            name = _register_instance(url)
+            if name:
+                return _registry[name]
+        except ValueError:
+            pass
+        return None
+    # No target specified — use default (first registered, or _http_client)
+    if _registry:
+        return next(iter(_registry.values()))
+    if _http_client is not None:
+        return _http_client
+    return None
+
+
 # ── Globals ──────────────────────────────────────────────────────────────
 
 # Parse args
 _data_dir = str(DEFAULT_DATA_DIR)
 _http_url: Optional[str] = None
+_cli_port: Optional[int] = None
+_cli_name: Optional[str] = None
 for i, arg in enumerate(sys.argv):
     if arg == "--data-dir" and i + 1 < len(sys.argv):
         _data_dir = sys.argv[i + 1]
     elif arg == "--http-url" and i + 1 < len(sys.argv):
         _http_url = sys.argv[i + 1]
+    elif arg == "--port" and i + 1 < len(sys.argv):
+        _cli_port = int(sys.argv[i + 1])
+    elif arg == "--name" and i + 1 < len(sys.argv):
+        _cli_name = sys.argv[i + 1]
+
+# --port is shorthand for --http-url http://localhost:{port}
+if _cli_port and not _http_url:
+    _http_url = f"http://localhost:{_cli_port}"
 
 # Also check env var
 if not _http_url:
@@ -355,12 +438,19 @@ _restored: bool = False
 _replaying: bool = False  # suppress journaling during seed replay
 
 
-def _use_http() -> bool:
+def _use_http(target: Optional[str] = None) -> bool:
     """Return True if we should use HTTP transport."""
+    if target and _resolve_target(target):
+        return True
     return _http_url is not None
 
 
-def _get_http() -> HttpClient:
+def _get_http(target: Optional[str] = None) -> HttpClient:
+    """Get HttpClient for the given target, or the default."""
+    if target:
+        client = _resolve_target(target)
+        if client:
+            return client
     global _http_client
     if _http_client is None:
         _http_client = HttpClient(_http_url)
@@ -399,6 +489,13 @@ def _get_journal() -> SeedJournal:
         else:
             _journal = SeedJournal(Path(_data_dir) / "seeds.jsonl")
     return _journal
+
+
+# Auto-register the CLI-provided instance
+if _http_url:
+    _initial_name = _register_instance(_http_url, _cli_name)
+    if _initial_name:
+        print(f"registered: {_initial_name} @ {_http_url}", file=sys.stderr)
 
 
 def _restore_if_empty():
@@ -535,6 +632,7 @@ def ferricula_remember(
     emotion: Optional[dict] = None,
     importance: float = 0.0,
     keystone: bool = False,
+    target: Optional[str] = None,
 ) -> str:
     """Remember something — embeds text automatically, never requires vectors.
 
@@ -549,6 +647,7 @@ def ferricula_remember(
         emotion: Optional {"primary": str, "secondary": str|null}.
         importance: Initial importance score (0.0 default).
         keystone: If true, memory is immune to decay.
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
     _restore_if_empty()
 
@@ -562,8 +661,8 @@ def ferricula_remember(
     profile = CHANNELS[channel]
     vector = chonk.embed(text)
 
-    if _use_http():
-        http = _get_http()
+    if _use_http(target):
+        http = _get_http(target)
         # HTTP mode: POST to /remember with full JSON
         mid = int(time.time() * 1000) % (2**31)
         row = {
@@ -611,104 +710,44 @@ def ferricula_remember(
 
 
 @_tool("recall")
-def ferricula_recall(query: str) -> str:
+def ferricula_recall(query: str, target: Optional[str] = None) -> str:
     """Search memories by text. Returns reconstructed text, never vectors.
 
     Accepts freeform text queries. Each recalled memory gets strengthened.
 
     Args:
         query: Search text or SQL query.
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
     _restore_if_empty()
 
-    if _use_http():
-        http = _get_http()
+    if _use_http(target):
+        http = _get_http(target)
         chonk = _get_chonk()
-        # Embed query and build vector SQL so Rust gets executable SQL, not freeform text
-        if chonk.available() and not query.strip().upper().startswith("SELECT"):
-            try:
-                qvec = chonk.embed(query)
-                vec_str = "[" + ",".join(str(v) for v in qvec) + "]"
-                sql = f"SELECT id FROM docs WHERE vector_topk_cosine('{vec_str}', 10)"
-                return http.post("recall", json.dumps({"query": sql}))
-            except Exception:
-                pass  # fall through to raw query
+        # Send query text — ferricula handles embedding internally via embed() SQL function.
+        # If it's already SQL, pass through. Otherwise the planner wraps it in embed().
         return http.post("recall", json.dumps({"query": query}))
 
-    chonk = _get_chonk()
-
-    # If chonk is available, embed the query and do vector search
-    if chonk.available():
-        try:
-            qvec = chonk.embed(query)
-            vec_str = "[" + ",".join(str(v) for v in qvec) + "]"
-            raw = _get_repl().send(
-                f"query SELECT id FROM docs WHERE vector_topk_cosine('{vec_str}', 10)"
-            )
-
-            # Parse IDs from query result: "ids=[1, 2, 3]"
-            ids_match = re.search(r"ids=\[([^\]]*)\]", raw)
-            if ids_match and ids_match.group(1).strip():
-                ids = [int(x.strip()) for x in ids_match.group(1).split(",") if x.strip()]
-            else:
-                ids = []
-
-            if not ids:
-                return "no memories found"
-
-            lines = []
-            repl = _get_repl()
-            for mid in ids:
-                repl.send(f"touch {mid}")
-                row_resp = repl.send(f"get {mid}")
-                inspect_resp = repl.send(f"inspect {mid}")
-
-                line = f"  [{mid}]"
-
-                # Get text from tag
-                try:
-                    row_data = json.loads(row_resp)
-                    text_tag = row_data.get("tags", {}).get("text", "")
-                    if text_tag:
-                        line += f" {text_tag}"
-                    ch = row_data.get("tags", {}).get("channel", "")
-                    if ch:
-                        line += f"  [{ch}]"
-                except (json.JSONDecodeError, KeyError):
-                    pass
-
-                # Fidelity + emotion from inspect
-                fid_match = re.search(r"fidelity=([\d.]+)", inspect_resp)
-                if fid_match:
-                    line += f"  fidelity={fid_match.group(1)}"
-                emo_match = re.search(r"emotion=(\S+)", inspect_resp)
-                if emo_match and emo_match.group(1) != "-":
-                    line += f"  emotion={emo_match.group(1)}"
-
-                lines.append(line)
-
-            return f"recalled {len(ids)} memories:\n" + "\n".join(lines)
-        except Exception as e:
-            return f"vector search failed ({e}), falling back to tag search"
-
-    # Fallback: use REPL recall (tag/SQL based)
+    # REPL path: send query directly — ferricula planner wraps freeform text
+    # in embed() and ferricula resolves embeddings internally via chonk.
     raw = _get_repl().send(f"recall {query}")
     return raw
 
 
 @_tool("inspect")
-def ferricula_inspect(id: int) -> str:
+def ferricula_inspect(id: int, target: Optional[str] = None) -> str:
     """Inspect a memory — shows reconstructed text, fidelity, emotion, graph.
 
     Never exposes raw vectors. Shows the text tag and thermodynamic state.
 
     Args:
         id: Memory ID to inspect.
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
     _restore_if_empty()
 
-    if _use_http():
-        return _get_http().get(f"inspect/{id}")
+    if _use_http(target):
+        return _get_http(target).get(f"inspect/{id}")
 
     repl = _get_repl()
     inspect_resp = repl.send(f"inspect {id}")
@@ -731,7 +770,7 @@ def ferricula_inspect(id: int) -> str:
 
 
 @_tool("observe")
-def ferricula_observe(path: str, summary: Optional[str] = None) -> str:
+def ferricula_observe(path: str, summary: Optional[str] = None, target: Optional[str] = None) -> str:
     """Observe a file — creates a keystone reference node in the knowledge graph.
 
     Uses the "seeing" channel. File observations are always keystoned
@@ -740,6 +779,7 @@ def ferricula_observe(path: str, summary: Optional[str] = None) -> str:
     Args:
         path: File path to observe.
         summary: Optional description of the file. Uses filename if omitted.
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
     _restore_if_empty()
 
@@ -772,7 +812,7 @@ def ferricula_observe(path: str, summary: Optional[str] = None) -> str:
 
 
 @_tool("reflect")
-def ferricula_reflect(thought: str, importance: float = 0.0) -> str:
+def ferricula_reflect(thought: str, importance: float = 0.0, target: Optional[str] = None) -> str:
     """Record a thought — working memory with faster decay.
 
     Uses the "thinking" channel (alpha=0.015). Thoughts decay faster
@@ -781,6 +821,7 @@ def ferricula_reflect(thought: str, importance: float = 0.0) -> str:
     Args:
         thought: The thought or internal reflection to record.
         importance: Initial importance score (0.0 default).
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
     _restore_if_empty()
 
@@ -811,17 +852,18 @@ def ferricula_reflect(thought: str, importance: float = 0.0) -> str:
 
 
 @_tool("health")
-def ferricula_health() -> str:
+def ferricula_health(target: Optional[str] = None) -> str:
     """Check health of ferricula and chonk (embedding service).
 
-    Returns status of both components.
+    Args:
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
     parts = []
 
     # Check ferricula
     try:
-        if _use_http():
-            status = _get_http().get("status")
+        if _use_http(target):
+            status = _get_http(target).get("status")
             parts.append(f"ferricula: ok (http)\n  {status}")
         else:
             status = _get_repl().send("status")
@@ -844,43 +886,49 @@ def ferricula_health() -> str:
 
 
 @_tool("dream")
-def ferricula_dream() -> str:
+def ferricula_dream(target: Optional[str] = None) -> str:
     """Run a dream cycle: decay, forgive, consolidate, neglect, review, prune.
 
     Dying memories with neighbors get a ghost echo: their vector is inverted
     to text via vec2text, re-embedded, and if fidelity >= 0.5 the echo is
     saved as labeled edges on surviving neighbors (requires chonk).
 
-    Returns a report of how many memories were affected in each phase.
+    Args:
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
-    if _use_http():
-        return _get_http().post("dream")
+    if _use_http(target):
+        return _get_http(target).post("dream")
     return _get_repl().send("dream")
 
 
 @_tool("status")
-def ferricula_status() -> str:
+def ferricula_status(target: Optional[str] = None) -> str:
     """Get memory system status: counts of active/forgiven/archived memories,
-    graph nodes/edges, prime tree terms."""
-    if _use_http():
-        return _get_http().get("status")
+    graph nodes/edges, prime tree terms.
+
+    Args:
+        target: Character name or port to route to (e.g. "assis" or "8780").
+    """
+    if _use_http(target):
+        return _get_http(target).get("status")
     return _get_repl().send("status")
 
 
 @_tool("keystone")
-def ferricula_keystone(id: int) -> str:
+def ferricula_keystone(id: int, target: Optional[str] = None) -> str:
     """Toggle keystone status on a memory. Keystones are immune to decay.
 
     Args:
         id: Memory ID to toggle.
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
-    if _use_http():
-        return _get_http().post(f"keystone/{id}")
+    if _use_http(target):
+        return _get_http(target).post(f"keystone/{id}")
     return _get_repl().send(f"keystone {id}")
 
 
 @_tool("connect")
-def ferricula_connect(a: int, b: int, label: str = "related", kind: str = "semantic") -> str:
+def ferricula_connect(a: int, b: int, label: str = "related", kind: str = "semantic", target: Optional[str] = None) -> str:
     """Create a graph edge between two memories.
 
     Args:
@@ -889,60 +937,74 @@ def ferricula_connect(a: int, b: int, label: str = "related", kind: str = "seman
         label: Edge label (e.g. "caused", "related", "contradicts").
         kind: Edge directionality: "semantic" (bidirectional) or "causal" (directed a->b only).
               Causal edges enforce the arrow of time — b cannot traverse back to a.
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
-    if _use_http():
-        return _get_http().post("connect", json.dumps({"a": a, "b": b, "label": label, "kind": kind}))
+    if _use_http(target):
+        return _get_http(target).post("connect", json.dumps({"a": a, "b": b, "label": label, "kind": kind}))
     return _get_repl().send(f"connect {a} {b} {label} {kind}")
 
 
 @_tool("disconnect")
-def ferricula_disconnect(a: int, b: int) -> str:
+def ferricula_disconnect(a: int, b: int, target: Optional[str] = None) -> str:
     """Remove the graph edge between two memories.
 
     Args:
         a: First memory ID.
         b: Second memory ID.
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
-    if _use_http():
-        return _get_http().post("disconnect", json.dumps({"a": a, "b": b}))
+    if _use_http(target):
+        return _get_http(target).post("disconnect", json.dumps({"a": a, "b": b}))
     return _get_repl().send(f"disconnect {a} {b}")
 
 
 @_tool("neighbors")
-def ferricula_neighbors(id: int) -> str:
+def ferricula_neighbors(id: int, target: Optional[str] = None) -> str:
     """Get all graph neighbors of a memory with edge labels and fidelity.
 
     Args:
         id: Memory ID.
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
-    if _use_http():
-        return _get_http().get(f"neighbors/{id}")
+    if _use_http(target):
+        return _get_http(target).get(f"neighbors/{id}")
     return _get_repl().send(f"neighbors {id}")
 
 
 @_tool("terms")
-def ferricula_terms() -> str:
-    """List all terms in the prime tree with member counts."""
-    if _use_http():
-        return _get_http().get("terms")
+def ferricula_terms(target: Optional[str] = None) -> str:
+    """List all terms in the prime tree with member counts.
+
+    Args:
+        target: Character name or port to route to (e.g. "assis" or "8780").
+    """
+    if _use_http(target):
+        return _get_http(target).get("terms")
     return _get_repl().send("terms")
 
 
 @_tool("query")
-def ferricula_query(sql: str) -> str:
+def ferricula_query(sql: str, target: Optional[str] = None) -> str:
     """Run a raw SQL query against the store. Does not update recall stats.
 
     Args:
         sql: SQL query string.
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
+    if _use_http(target):
+        return _get_http(target).post("query", json.dumps({"query": sql}))
     return _get_repl().send(f"query {sql}")
 
 
 @_tool("checkpoint")
-def ferricula_checkpoint() -> str:
-    """Flush current state to V2 snapshot and clear WAL."""
-    if _use_http():
-        return _get_http().post("checkpoint")
+def ferricula_checkpoint(target: Optional[str] = None) -> str:
+    """Flush current state to V2 snapshot and clear WAL.
+
+    Args:
+        target: Character name or port to route to (e.g. "assis" or "8780").
+    """
+    if _use_http(target):
+        return _get_http(target).post("checkpoint")
     return _get_repl().send("checkpoint")
 
 
@@ -950,19 +1012,22 @@ def ferricula_checkpoint() -> str:
 
 
 @_tool("identity")
-def ferricula_identity() -> str:
+def ferricula_identity(target: Optional[str] = None) -> str:
     """Get the agent's identity: hexagram, horoscope, archetypes, emotions.
 
     Returns the full identity state including cast hexagram number and name,
     zodiac sign, primary/secondary emotions, and all five archetypes.
+
+    Args:
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
-    if _use_http():
-        return _get_http().get("identity")
+    if _use_http(target):
+        return _get_http(target).get("identity")
     return "error: identity requires HTTP mode (--serve)"
 
 
 @_tool("inversion_check")
-def ferricula_inversion_check(id: int) -> str:
+def ferricula_inversion_check(id: int, target: Optional[str] = None) -> str:
     """Check semantic fidelity of a memory via vec2text inversion.
 
     Inverts the memory's vector back to approximate text via chonk,
@@ -973,9 +1038,10 @@ def ferricula_inversion_check(id: int) -> str:
 
     Args:
         id: Memory ID to check.
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
-    if _use_http():
-        return _get_http().get(f"inversion/{id}")
+    if _use_http(target):
+        return _get_http(target).get(f"inversion/{id}")
     return "error: inversion check requires HTTP mode (--serve)"
 
 
@@ -985,13 +1051,16 @@ RADIO_URL = os.environ.get("RADIO_URL", "http://localhost:9080")
 
 
 @_tool("clock")
-def ferricula_clock() -> str:
+def ferricula_clock(target: Optional[str] = None) -> str:
     """Get clock telemetry: ticks, dreams, entropy stats, radio status.
 
     Also returns any buffered background [clock] events from the REPL.
+
+    Args:
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
-    if _use_http():
-        return _get_http().get("clock")
+    if _use_http(target):
+        return _get_http(target).get("clock")
     repl = _get_repl()
     status = repl.send("clock")
     events = repl.drain_clock_events()
@@ -1001,12 +1070,13 @@ def ferricula_clock() -> str:
 
 
 @_tool("offer_entropy")
-def ferricula_offer_entropy(source: str = "radio") -> str:
+def ferricula_offer_entropy(source: str = "radio", target: Optional[str] = None) -> str:
     """Inject entropy into ferricula to trigger a dream cycle.
 
     Args:
         source: Either "radio" to fetch from gnosis-radio, or a hex string
                 to inject directly (e.g. "deadbeef0123").
+        target: Character name or port to route to (e.g. "assis" or "8780").
     """
     if source == "radio":
         # Fetch entropy from gnosis-radio
@@ -1023,10 +1093,66 @@ def ferricula_offer_entropy(source: str = "radio") -> str:
     else:
         hex_str = source.strip()
 
-    if _use_http():
-        return _get_http().post("offer", json.dumps({"entropy": hex_str}))
+    if _use_http(target):
+        return _get_http(target).post("offer", json.dumps({"entropy": hex_str}))
     result = _get_repl().send(f"offer {hex_str}")
     return result
+
+
+# ── Multi-Instance Tools ─────────────────────────────────────────────────
+
+SCAN_PORTS = [8765, 8773, 8774, 8775, 8776, 8780]
+
+
+@mcp.tool()
+def ferricula_discover(ports: Optional[str] = None) -> str:
+    """Scan ports for running ferricula instances, register them by name.
+
+    Calls /identity on each port to discover who's there.
+
+    Args:
+        ports: Comma-separated ports to scan (default: 8765,8773-8776,8780).
+    """
+    if ports:
+        scan = [int(p.strip()) for p in ports.split(",") if p.strip().isdigit()]
+    else:
+        scan = SCAN_PORTS
+
+    found = []
+    for port in scan:
+        url = f"http://localhost:{port}"
+        client = HttpClient(url)
+        try:
+            raw = client.get("identity")
+            data = json.loads(raw)
+            name = data.get("name", "").strip()
+            agent_id = data.get("agent_id", "")
+            if name:
+                _register_instance(url, name.lower())
+                found.append(f"  {name} @ :{port} (agent={agent_id})")
+            else:
+                found.append(f"  unknown @ :{port} (no name in identity)")
+        except Exception:
+            continue  # port not responding, skip
+
+    if not found:
+        return "no ferricula instances found on scanned ports"
+    return f"discovered {len(found)} instances:\n" + "\n".join(found)
+
+
+@mcp.tool()
+def ferricula_list_characters() -> str:
+    """List all registered ferricula character instances.
+
+    Shows characters that have been discovered or manually registered.
+    Use the target parameter on any tool to talk to a specific character.
+    """
+    if not _registry:
+        return "no characters registered. Run discover first, or use --port/--http-url."
+    lines = []
+    for name, client in _registry.items():
+        lines.append(f"  {name} @ {client.base_url}")
+    return f"{len(lines)} registered characters:\n" + "\n".join(lines)
 
 
 if __name__ == "__main__":

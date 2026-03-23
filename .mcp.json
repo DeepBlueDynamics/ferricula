@@ -1,5 +1,10 @@
 {
   "mcpServers": {
+    "hyperia": {
+      "type": "stdio",
+      "command": "C:/Users/kordl/Code/Gnosis/hyperia/sidecar/target/debug/hyperia-sidecar.exe",
+      "args": ["--mcp"]
+    },
     "ferricula": {
       "type": "stdio",
       "command": "python",
@@ -11,7 +16,7 @@
         "FERRICULA_SURFACE": "all",
         "RADIO_URL": "http://localhost:9080",
         "CLOCK_TICK_SECS": "60",
-        "CHONK_URL": "http://localhost:8080",
+        "CHONK_URL": "http://nemesis:8080",
         "FERRICULA_URL": "http://localhost:8765"
       }
     }
