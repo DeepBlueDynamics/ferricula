@@ -25,6 +25,12 @@ pub struct DreamReport {
     pub edges_created: u32,
     pub keystones_promoted: u32,
     pub skg_summary: SkgUpdateSummary,
+    /// IDs of memories that were decay-ticked this cycle.
+    pub decayed_ids: Vec<u32>,
+    /// IDs of memories that transitioned Active → Forgiven this cycle.
+    pub forgiven_ids: Vec<u32>,
+    /// IDs involved in consolidation groups this cycle.
+    pub consolidated_ids: Vec<u32>,
 }
 
 /// Cosine similarity threshold for consolidation grouping.
@@ -92,6 +98,7 @@ pub fn dream_cycle_with_intensity(
         if let Some(record) = store.get_mut(id) {
             record.decay_tick();
             report.decayed += 1;
+            report.decayed_ids.push(id);
             report.ticks += 1;
         }
     }
@@ -102,6 +109,7 @@ pub fn dream_cycle_with_intensity(
             if record.state == LifecycleState::Active && !record.above_gate() {
                 record.forgive();
                 report.forgiven += 1;
+                report.forgiven_ids.push(id);
             }
         }
     }
@@ -116,6 +124,7 @@ pub fn dream_cycle_with_intensity(
     for group in groups {
         if group.len() >= 2 {
             let count = group.len() as u32;
+            report.consolidated_ids.extend_from_slice(&group);
             let edges = consolidate_group(store, graph, &group);
             report.consolidated += count;
             report.edges_created += edges;

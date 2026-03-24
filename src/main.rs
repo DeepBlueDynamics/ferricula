@@ -156,6 +156,7 @@ fn main() -> Result<()> {
         let _http_handle = ferricula::http::spawn_http(serve_port, http_tx, http_flag.clone());
 
         let mut pending_recalls: Vec<PendingRecall> = Vec::new();
+        let mut last_dream_report = String::new();
 
         // Build search engine from existing memories
         let mut search_engine = SearchEngine::new();
@@ -178,7 +179,7 @@ fn main() -> Result<()> {
                 break;
             }
 
-            process_clock_events(&mut db, &mut identity, &clock_rx, &chonk_url);
+            process_clock_events(&mut db, &mut identity, &clock_rx, &chonk_url, &mut last_dream_report);
             process_http_commands(
                 &mut db,
                 &planner,
@@ -188,6 +189,7 @@ fn main() -> Result<()> {
                 &http_rx,
                 &mut pending_recalls,
                 &mut search_engine,
+                &mut last_dream_report,
             );
             process_pending_recalls(&mut db, &mut pending_recalls, &chonk_url);
 
@@ -230,7 +232,10 @@ fn main() -> Result<()> {
                 break;
             }
 
-            process_clock_events(&mut db, &mut identity, &clock_rx, &chonk_url);
+            {
+                let mut _repl_dream = String::new();
+                process_clock_events(&mut db, &mut identity, &clock_rx, &chonk_url, &mut _repl_dream);
+            }
 
             match stdin_rx.recv_timeout(Duration::from_millis(500)) {
                 Ok(line) => {
@@ -294,7 +299,7 @@ fn get_identity_entropy() -> Vec<u8> {
 }
 
 /// Drain all pending clock events and act on them.
-fn process_clock_events(db: &mut DurableEngine, identity: &mut IdentityState, clock_rx: &mpsc::Receiver<ClockEvent>, chonk_url: &str) {
+fn process_clock_events(db: &mut DurableEngine, identity: &mut IdentityState, clock_rx: &mpsc::Receiver<ClockEvent>, chonk_url: &str, last_dream_report: &mut String) {
     let chonk = if inversion::chonk_available(chonk_url) { Some(chonk_url) } else { None };
     while let Ok(event) = clock_rx.try_recv() {
         match event {
@@ -305,6 +310,8 @@ fn process_clock_events(db: &mut DurableEngine, identity: &mut IdentityState, cl
             } => {
                 let report = db.dream_with_intensity(intensity, &[], chonk);
                 identity.activate_from_report(&report);
+                let formatted = format_dream_report(&report);
+                *last_dream_report = formatted;
                 eprintln!(
                     "[clock] dream epoch={epoch} intensity={intensity:.2} entropy={entropy_bytes}B \
                      decayed={} forgiven={} consolidated={} pruned={} ghosts={} edges={} archetypes=[{}]",
@@ -373,6 +380,7 @@ fn process_http_commands(
     http_rx: &mpsc::Receiver<HttpCommand>,
     pending_recalls: &mut Vec<PendingRecall>,
     search_engine: &mut SearchEngine,
+    last_dream_report: &mut String,
 ) {
     while let Ok(cmd) = http_rx.try_recv() {
         match cmd {
@@ -414,6 +422,7 @@ fn process_http_commands(
             }
             HttpCommand::Dream { body: _, reply } => {
                 let result = cmd_dream(db, identity, chonk_url).unwrap_or_else(|e| json_error(&e));
+                *last_dream_report = result.clone();
                 let _ = reply.send(json_wrap("result", &result));
             }
             HttpCommand::Status { reply } => {
@@ -426,6 +435,7 @@ fn process_http_commands(
             }
             HttpCommand::Offer { body, reply } => {
                 let result = cmd_offer(db, identity, &body, chonk_url).unwrap_or_else(|e| json_error(&e));
+                *last_dream_report = result.clone();
                 let _ = reply.send(json_wrap("result", &result));
             }
             HttpCommand::Keystone { id, reply } => {
@@ -512,6 +522,13 @@ fn process_http_commands(
             HttpCommand::Confer { body, reply } => {
                 let result = cmd_confer(db, identity, &body).unwrap_or_else(|e| json_error(&e));
                 let _ = reply.send(result);
+            }
+            HttpCommand::LastDream { reply } => {
+                if last_dream_report.is_empty() {
+                    let _ = reply.send(json_wrap("result", "no dreams yet"));
+                } else {
+                    let _ = reply.send(json_wrap("result", last_dream_report));
+                }
             }
         }
     }
@@ -1226,8 +1243,11 @@ fn format_dream_report(report: &ferricula::DreamReport) -> String {
     let skg = &report.skg_summary;
     let emerging: Vec<String> = skg.top_emerging.iter().map(|e| format!("{}~{}", e.term_a, e.term_b)).collect();
     let decaying: Vec<String> = skg.top_decaying.iter().map(|e| format!("{}~{}", e.term_a, e.term_b)).collect();
+    let decayed_ids: Vec<String> = report.decayed_ids.iter().map(|id| id.to_string()).collect();
+    let forgiven_ids: Vec<String> = report.forgiven_ids.iter().map(|id| id.to_string()).collect();
+    let consolidated_ids: Vec<String> = report.consolidated_ids.iter().map(|id| id.to_string()).collect();
     format!(
-        "dream complete:\n  ticks={}\n  decayed={}\n  forgiven={}\n  archived={}\n  consolidated={}\n  pruned={}\n  ghost_echoes={}\n  keystones_reviewed={}\n  edges_created={}\n  keystones_promoted={}\n  active_archetypes=[{}]\n  skg: sampled={} tracked={} emerging=[{}] decaying=[{}]",
+        "dream complete:\n  ticks={}\n  decayed={}\n  forgiven={}\n  archived={}\n  consolidated={}\n  pruned={}\n  ghost_echoes={}\n  keystones_reviewed={}\n  edges_created={}\n  keystones_promoted={}\n  active_archetypes=[{}]\n  decayed_ids=[{}]\n  forgiven_ids=[{}]\n  consolidated_ids=[{}]\n  skg: sampled={} tracked={} emerging=[{}] decaying=[{}]",
         report.ticks,
         report.decayed,
         report.forgiven,
@@ -1239,6 +1259,9 @@ fn format_dream_report(report: &ferricula::DreamReport) -> String {
         report.edges_created,
         report.keystones_promoted,
         report.active_archetypes.join(","),
+        decayed_ids.join(","),
+        forgiven_ids.join(","),
+        consolidated_ids.join(","),
         skg.pairs_sampled,
         skg.pairs_tracked,
         emerging.join(","),

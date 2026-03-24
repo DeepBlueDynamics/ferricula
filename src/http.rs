@@ -104,6 +104,9 @@ pub enum HttpCommand {
         body: String,
         reply: mpsc::SyncSender<String>,
     },
+    LastDream {
+        reply: mpsc::SyncSender<String>,
+    },
 }
 
 /// Spawn the HTTP server thread.
@@ -376,6 +379,10 @@ fn dispatch(
                 reply: reply_tx,
             }
             .send_and_recv(http_tx, reply_rx)?
+        }
+        ("GET", ["dream", "latest"]) => {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            HttpCommand::LastDream { reply: reply_tx }.send_and_recv(http_tx, reply_rx)?
         }
         _ => return Err(format!("unknown route: {method} {url}")),
     };
