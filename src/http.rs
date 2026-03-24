@@ -99,6 +99,11 @@ pub enum HttpCommand {
     Dashboard {
         reply: mpsc::SyncSender<String>,
     },
+    /// Inner voice — archetypes evaluate a proposed response against memories.
+    Confer {
+        body: String,
+        reply: mpsc::SyncSender<String>,
+    },
 }
 
 /// Spawn the HTTP server thread.
@@ -363,6 +368,14 @@ fn dispatch(
         ("GET", ["glossary"]) => {
             let (reply_tx, reply_rx) = mpsc::sync_channel(1);
             HttpCommand::Glossary { reply: reply_tx }.send_and_recv(http_tx, reply_rx)?
+        }
+        ("POST", ["confer"]) => {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            HttpCommand::Confer {
+                body,
+                reply: reply_tx,
+            }
+            .send_and_recv(http_tx, reply_rx)?
         }
         _ => return Err(format!("unknown route: {method} {url}")),
     };

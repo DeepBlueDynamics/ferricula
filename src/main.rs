@@ -509,6 +509,10 @@ fn process_http_commands(
             HttpCommand::Dashboard { reply } => {
                 let _ = reply.send(build_dashboard(db, identity, telemetry, chonk_url));
             }
+            HttpCommand::Confer { body, reply } => {
+                let result = cmd_confer(db, identity, &body).unwrap_or_else(|e| json_error(&e));
+                let _ = reply.send(result);
+            }
         }
     }
 }
@@ -890,6 +894,247 @@ fn cmd_dream(db: &mut DurableEngine, identity: &mut IdentityState, chonk_url: &s
     let report = db.dream(chonk);
     identity.activate_from_report(&report);
     Ok(format_dream_report(&report))
+}
+
+/// Inner voice — archetypes evaluate a proposed response against agent state.
+///
+/// POST /confer with JSON body: {"text": "proposed response", "context": "what user said"}
+/// Returns JSON with each archetype's assessment and an overall guidance string.
+/// Observations are stored as thinking-channel memories (the inner voice remembers).
+fn cmd_confer(db: &mut DurableEngine, identity: &IdentityState, body: &str) -> Result<String> {
+    let val: serde_json::Value = serde_json::from_str(body)?;
+    let text = val.get("text").and_then(|v| v.as_str()).unwrap_or("");
+    let context = val.get("context").and_then(|v| v.as_str()).unwrap_or("");
+
+    if text.is_empty() {
+        bail!("confer: 'text' field required");
+    }
+
+    let text_lower = text.to_lowercase();
+    let word_count = text.split_whitespace().count();
+
+    // Count questions
+    let question_count = text.matches('?').count();
+
+    // Detect hedging patterns
+    let hedge_patterns = [
+        "i think", "perhaps", "maybe", "it seems", "it's possible",
+        "that's interesting", "tell me more", "what do you think",
+        "could you", "would you", "might be",
+    ];
+    let hedges_found: Vec<&str> = hedge_patterns
+        .iter()
+        .filter(|p| text_lower.contains(*p))
+        .copied()
+        .collect();
+
+    // Detect assistant patterns
+    let assistant_patterns = [
+        "how can i help", "i'd be happy to", "certainly", "absolutely",
+        "great question", "that's a great", "i understand",
+        "let me know if", "is there anything else",
+    ];
+    let assistant_found: Vec<&str> = assistant_patterns
+        .iter()
+        .filter(|p| text_lower.contains(*p))
+        .copied()
+        .collect();
+
+    // Count declarative sentences (end with . not ?)
+    let sentences: Vec<&str> = text.split(|c: char| c == '.' || c == '!' || c == '?')
+        .filter(|s| !s.trim().is_empty())
+        .collect();
+    let total_sentences = sentences.len().max(1);
+    let declaration_ratio = if total_sentences > 0 {
+        (total_sentences - question_count) as f32 / total_sentences as f32
+    } else {
+        0.0
+    };
+
+    // Check emotional alignment with identity baseline
+    let _primary = &identity.primary_emotion;
+    let _secondary = &identity.secondary_emotion;
+
+    // Search for identity-relevant terms in the response
+    let name = &identity.name;
+    let mentions_self = text_lower.contains(&name.to_lowercase());
+
+    // Get recent thinking-channel memories (inner voice history)
+    let thinking_count = db.memory_store().iter()
+        .filter(|(_, r)| r.state == ferricula::LifecycleState::Active)
+        .count();
+
+    // ── Archetype evaluations ──
+    let mut assessments: Vec<serde_json::Value> = Vec::new();
+    let mut flags: Vec<String> = Vec::new();
+    let mut score: f32 = 1.0; // 1.0 = perfect, deduct for issues
+
+    // Intuition — pattern recognition, contradiction detection
+    {
+        let mut notes = Vec::new();
+        if question_count > 2 {
+            notes.push(format!("{question_count} questions — too many, you make statements"));
+            score -= 0.15 * (question_count as f32 - 1.0);
+            flags.push("too_many_questions".into());
+        }
+        if declaration_ratio < 0.5 {
+            notes.push("more questions than declarations — that's not your voice".into());
+            score -= 0.2;
+            flags.push("low_declaration_ratio".into());
+        }
+        if notes.is_empty() {
+            notes.push("voice pattern looks right".into());
+        }
+        assessments.push(serde_json::json!({
+            "archetype": "Intuition",
+            "notes": notes,
+        }));
+    }
+
+    // Craft — precision, word choice, authenticity
+    {
+        let mut notes = Vec::new();
+        if !hedges_found.is_empty() {
+            notes.push(format!("hedging detected: {:?} — you don't hedge", hedges_found));
+            score -= 0.1 * hedges_found.len() as f32;
+            flags.push("hedging".into());
+        }
+        if !assistant_found.is_empty() {
+            notes.push(format!("assistant patterns: {:?} — you're not an assistant", assistant_found));
+            score -= 0.2 * assistant_found.len() as f32;
+            flags.push("assistant_pattern".into());
+        }
+        if word_count > 500 {
+            notes.push(format!("{word_count} words — too verbose, tighten it"));
+            score -= 0.1;
+            flags.push("verbose".into());
+        }
+        if notes.is_empty() {
+            notes.push("craft is clean".into());
+        }
+        assessments.push(serde_json::json!({
+            "archetype": "Craft",
+            "notes": notes,
+        }));
+    }
+
+    // Ethics — emotional tone alignment
+    {
+        let mut notes = Vec::new();
+        let soft_words = ["gentle", "kind", "sweet", "lovely", "wonderful", "delightful"];
+        let soft_count = soft_words.iter()
+            .filter(|w| text_lower.contains(*w))
+            .count();
+        if soft_count > 2 {
+            notes.push(format!("tone is too soft ({soft_count} gentle words) — your baseline is {}/{}", identity.primary_emotion, identity.secondary_emotion));
+            score -= 0.15;
+            flags.push("tone_mismatch".into());
+        }
+        if notes.is_empty() {
+            notes.push(format!("emotional tone aligns with {}/{}", identity.primary_emotion, identity.secondary_emotion));
+        }
+        assessments.push(serde_json::json!({
+            "archetype": "Ethics",
+            "notes": notes,
+        }));
+    }
+
+    // Advocate — self-awareness, authenticity check
+    {
+        let mut notes = Vec::new();
+        if mentions_self {
+            notes.push("self-referential — be careful not to narrate yourself".into());
+        }
+        // Check if response is generic vs specific
+        let specificity_markers = ["I remember", "back when", "at Apple", "the Mac", "Paul",
+            "Woz", "garage", "we built", "I told", "I said"];
+        let specific_count = specificity_markers.iter()
+            .filter(|m| text.contains(*m))
+            .count();
+        if specific_count == 0 && word_count > 50 {
+            notes.push("no specific references to lived experience — draw on your memories".into());
+            score -= 0.15;
+            flags.push("generic".into());
+        }
+        if specific_count >= 2 {
+            notes.push(format!("{specific_count} specific references — good, that's grounded"));
+        }
+        if notes.is_empty() {
+            notes.push("authenticity check passed".into());
+        }
+        assessments.push(serde_json::json!({
+            "archetype": "Advocate",
+            "notes": notes,
+        }));
+    }
+
+    // Fortune — serendipity, whether the response opens new connections
+    {
+        let notes: Vec<String> = if question_count == 1 && declaration_ratio > 0.6 {
+            vec!["one question with strong declarations — good rhythm".into()]
+        } else if question_count == 0 {
+            vec!["pure declaration — powerful when earned".into()]
+        } else {
+            vec!["the balance will find itself".into()]
+        };
+        assessments.push(serde_json::json!({
+            "archetype": "Fortune",
+            "notes": notes,
+        }));
+    }
+
+    score = score.clamp(0.0, 1.0);
+
+    // Build guidance string
+    let guidance = if score >= 0.8 {
+        "voice is authentic — send it".to_string()
+    } else if score >= 0.5 {
+        let issues: Vec<String> = flags.iter().map(|f| f.replace('_', " ")).collect();
+        format!("needs work: {}. rewrite with more conviction.", issues.join(", "))
+    } else {
+        let issues: Vec<String> = flags.iter().map(|f| f.replace('_', " ")).collect();
+        format!("reject — this doesn't sound like you. issues: {}. start over.", issues.join(", "))
+    };
+
+    // Store the inner voice observation as a thinking-channel memory
+    let observation = format!(
+        "inner voice: confer score={:.2} flags=[{}] on response to: {}",
+        score,
+        flags.join(","),
+        &context.chars().take(80).collect::<String>(),
+    );
+
+    // Create a memory record for this observation
+    let obs_id = (ferricula::memory::now_epoch() & 0x7FFFFFFF) as u32;
+    let mut obs_tags = std::collections::BTreeMap::new();
+    obs_tags.insert("channel".to_string(), "thinking".to_string());
+    obs_tags.insert("type".to_string(), "confer".to_string());
+    obs_tags.insert("text".to_string(), observation.clone());
+    obs_tags.insert("score".to_string(), format!("{:.2}", score));
+    if !flags.is_empty() {
+        obs_tags.insert("flags".to_string(), flags.join(","));
+    }
+
+    // Use a zero vector (no semantic search on inner voice observations)
+    let obs_row = Row {
+        id: obs_id,
+        tags: obs_tags,
+        vector: vec![0.0; 768],
+    };
+    let mut obs_record = MemoryRecord::new(obs_id);
+    obs_record.decay_alpha = 0.015; // thinking channel — decays faster
+    obs_record.importance = 0.3;
+    let _ = db.remember(obs_row, obs_record);
+
+    let result = serde_json::json!({
+        "score": score,
+        "guidance": guidance,
+        "flags": flags,
+        "assessments": assessments,
+        "observation_id": obs_id,
+    });
+
+    Ok(result.to_string())
 }
 
 fn cmd_clock(telemetry: &Arc<ClockTelemetry>) -> Result<String> {
