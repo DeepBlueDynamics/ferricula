@@ -1085,6 +1085,53 @@ fn cmd_confer(db: &mut DurableEngine, identity: &IdentityState, body: &str) -> R
 
     score = score.clamp(0.0, 1.0);
 
+    // ── Advocate length recommendation ──
+    // "Is this true, and does it need anything more than what it already is?"
+    let context_words = context.split_whitespace().count();
+    let response_words = word_count;
+
+    // Emotional gravity signals in the context (short, heavy inputs)
+    let gravity_words = ["died", "death", "cancer", "sorry", "lost", "love",
+        "father", "mother", "pain", "afraid", "alone", "goodbye", "miss"];
+    let context_lower = context.to_lowercase();
+    let gravity = gravity_words.iter()
+        .filter(|w| context_lower.contains(*w))
+        .count();
+
+    // Questions that deserve short answers
+    let is_yes_no = context_lower.starts_with("do you")
+        || context_lower.starts_with("did you")
+        || context_lower.starts_with("is ")
+        || context_lower.starts_with("are you")
+        || context_lower.starts_with("can you")
+        || context_lower.starts_with("would you");
+
+    // Recommend tokens based on what the moment demands
+    let recommended_tokens: u32 = if gravity >= 2 {
+        // Heavy moment — be present, not verbose
+        128
+    } else if is_yes_no && context_words <= 10 {
+        // Direct question, direct answer
+        128
+    } else if context_words <= 3 {
+        // Very short input — match the energy
+        256
+    } else if response_words > context_words * 4 && context_words < 30 {
+        // Response is way longer than it needs to be
+        256
+    } else if context_words > 50 {
+        // Substantial input deserves substantial response
+        1024
+    } else {
+        512
+    };
+
+    // If response already exists and is bloated, flag it
+    if response_words > 200 && recommended_tokens <= 256 {
+        flags.push("bloated".into());
+        score -= 0.1;
+    }
+
     // Build guidance string
     let guidance = if score >= 0.8 {
         "voice is authentic — send it".to_string()
@@ -1131,6 +1178,7 @@ fn cmd_confer(db: &mut DurableEngine, identity: &IdentityState, body: &str) -> R
         "guidance": guidance,
         "flags": flags,
         "assessments": assessments,
+        "recommended_tokens": recommended_tokens,
         "observation_id": obs_id,
     });
 
