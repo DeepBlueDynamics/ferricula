@@ -76,6 +76,15 @@ through the companion embedding service (gnosis-chunk) achieves sub-second
 search with no approximate nearest-neighbor structures---brute-force
 cosine similarity over roaring-bitmap-filtered candidate sets.
 Unlike vector databases, \textsc{Ferricula} memories are alive.
+
+In v0.6.0, we introduce \textit{resonant recall}: a Wheeler-Feynman
+transactional model where memories choose whether to respond based on
+their thermodynamic state.  Four resonance gates---each mapped to one of
+five Wisdom King archetypes from the Myoo system---filter recall results
+by fidelity, lifecycle state, temporal coherence, and agent cognitive
+heat.  The agent accumulates heat on recall and must dream to cool,
+creating a virtuous cycle: agents that dream more have access to more of
+their memory.
 \end{abstract}
 
 % ══════════════════════════════════════════════════════════════════
@@ -354,11 +363,102 @@ the lower trigram sets the secondary.
 
 \subsection{Five Archetypes}
 
-Five sub-agent archetypes (Intuition, Fortune, Craft, Ethics, Advocate)
-are each seeded with their own hexagram cast from the same entropy pool.
-The archetypes progress through a state machine: \textsc{Dormant} $\to$
-\textsc{Awakening} $\to$ \textsc{Active} $\to$ \textsc{Transcendent},
-with transitions gated by entropy tier thresholds.
+Five sub-agent archetypes---each mapped to one of the five Wisdom Kings
+(\textit{Myōō}) from Shingon Buddhist tradition---are seeded with their
+own hexagram cast from the same entropy pool:
+
+\begin{center}
+\footnotesize
+\begin{tabular}{llll}
+\toprule
+Archetype & King & Direction & Function \\
+\midrule
+Advocate  & Acala (不動)       & Center & Fidelity gate \\
+Intuition & Trailokyavijaya (降三世) & East & Temporal gate \\
+Craft     & Ku\d{n}\d{d}ali (軍荼利) & South & \textit{(Phase 2)} \\
+Ethics    & Yam\=antaka (大威徳) & West & Lifecycle gate \\
+Fortune   & Vajrayak\d{s}a (金剛夜叉) & North & Capacity gate \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Archetypes activate based on dream intensity tier: at low intensity
+($I < 0.25$), none activate; at moderate intensity, Intuition and
+Fortune wake; at full intensity ($I \geq 0.75$), all five are active.
+When active, each archetype enforces its resonance gate during recall
+(Section~\ref{sec:resonance}).
+
+\subsection{Inner Voice (Confer)}
+
+Before an LLM response is sent, all five archetypes evaluate the
+proposed text through the \texttt{/confer} endpoint.  Each archetype
+applies its own scoring criteria---Intuition checks voice authenticity,
+Craft measures precision, Ethics evaluates emotional alignment, Advocate
+tests grounding in lived experience, Fortune assesses rhythm and
+balance.  Combined scores below 0.5 trigger rejection; scores above 0.8
+pass.  The evaluation is stored as a \texttt{thinking}-channel memory
+with accelerated decay.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Resonant Recall}\label{sec:resonance}
+
+In v0.6.0, recall is no longer a passive database read.  The
+Wheeler-Feynman transactional interpretation of electrodynamics
+provides the model: an agent broadcasts a \textit{retarded offer}
+(the recall query); each candidate memory evaluates whether to fire
+an \textit{advanced confirmation} based on its thermodynamic state.
+Only when the handshake completes does the transaction lock and
+the data transfer.
+
+\subsection{Resonance Gates}
+
+Four gates determine whether a memory responds:
+
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+\item \textbf{Fidelity} (Acala): $f \geq 0.75$.  The immovable
+  threshold.  Memories below the fidelity gate are out of phase.
+\item \textbf{Lifecycle} (Yam\=antaka): state $=$ \textsc{Active}.
+  What has ended stays ended---Forgiven and Archived memories
+  do not respond.
+\item \textbf{Temporal} (Trailokyavijaya): not recalled within the
+  last 2 seconds (saturation) and not neglected beyond 48 hours
+  (phase drift).  Conquers past, present, and future.
+\item \textbf{Agent Capacity} (Vajrayak\d{s}a): agent cognitive heat
+  $< H_{\max}$.  The agent must have capacity to absorb.
+\end{enumerate}
+
+\noindent
+Keystones bypass all gates---they always resonate.  When an archetype
+is dormant (no recent high-intensity dream), its gate is open.
+More dreams $=$ stricter filtering $=$ cleaner recall.
+
+\subsection{Cognitive Heat}
+
+The agent maintains a scalar $h \in [0, \infty)$ representing
+cognitive load:
+
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+\item Each successful recall adds $\Delta h = 0.3$ per memory.
+\item Passive cooling: $h \leftarrow \max(h - 0.1 \cdot \Delta t,\; 0)$.
+\item Dream cooling: $h \leftarrow \max(h - 3.0,\; 0)$ per cycle.
+\item At $h > H_{\max} = 10.0$, Vajrayak\d{s}a's gate refuses recall.
+\end{itemize}
+
+\noindent
+An agent can recall approximately 33 memories before overheating and
+must dream to restore capacity.  This creates the core thermodynamic
+loop: recall heats, dreams cool, forgetting clears, resonance returns.
+
+\subsection{Semantic Knowledge Graph}
+
+The SKG tracks co-occurrence velocity and acceleration between term
+pairs across dream cycles using Weber brackets.  Each dream samples
+keystone-adjacent terms from the prime tree, computes Jaccard indices,
+pushes to per-pair ring buffers, and derives first and second
+derivatives.  The top emerging and decaying term pairs are reported
+with each dream, providing a signal of which conceptual connections
+are strengthening or dissolving.
 
 % ══════════════════════════════════════════════════════════════════
 \section{The Entropy Clock}
@@ -386,20 +486,28 @@ and ferricula's HTTP API.
 Tools are scoped by \textit{surface}:
 
 \begin{itemize}[leftmargin=*,itemsep=1pt]
-\item \textbf{Cognitive} (10 tools) --- what the LLM singleton sees:
+\item \textbf{Cognitive} (11 tools) --- what the LLM singleton sees:
   \texttt{remember}, \texttt{recall}, \texttt{reflect}, \texttt{observe},
   \texttt{inspect}, \texttt{connect}, \texttt{neighbors}, \texttt{status},
-  \texttt{health}, \texttt{identity}.
+  \texttt{health}, \texttt{identity}, \texttt{embody}.
 \item \textbf{System} (9 tools) --- maintenance and audit:
   \texttt{dream}, \texttt{keystone}, \texttt{checkpoint},
   \texttt{offer\_entropy}, \texttt{inversion\_check}, \texttt{terms},
   \texttt{query}, \texttt{disconnect}, \texttt{clock}.
+\item \textbf{Code indexing} (\texttt{ferricula-code.py}) --- a
+  separate MCP server that walks a codebase, summarizes each file,
+  and stores summaries as keystone memories.  The codebase becomes
+  part of the agent's permanent memory, searchable via recall.
 \end{itemize}
 
 \noindent
 The surface is selected via environment variable
 (\texttt{FERRICULA\_SURFACE}), enforcing a separation between the
 agent's conscious interface and the system's metabolic machinery.
+
+The \texttt{embody} tool aggregates identity, core memories, status,
+and SKG dream state into a single payload---everything an LLM needs
+to inhabit a character at the start of a conversation.
 
 % ══════════════════════════════════════════════════════════════════
 \section{The Arena: Monte Cristo}
@@ -635,7 +743,7 @@ Seven principles govern the implementation:
 % ══════════════════════════════════════════════════════════════════
 \section{Availability}
 
-\textsc{Ferricula} v0.4.0 is available as a Docker image and
+\textsc{Ferricula} v0.6.0 is available as a Docker image and
 source code.
 
 \begin{lstlisting}
@@ -643,7 +751,7 @@ source code.
 docker run -d --name ferricula \
   -p 8765:8765 \
   -v ferricula-data:/data \
-  gcr.io/gnosis-459403/ferricula
+  gcr.io/gnosis-459403/ferricula:v0.6.0
 
 # Source
 git clone git@github.com:\
@@ -653,7 +761,7 @@ cargo build --release
 \end{lstlisting}
 
 \noindent
-89 tests pass.  Licensed under the Gnosis AI-Sovereign License v1.3
+138 tests pass.  Licensed under the Gnosis AI-Sovereign License v1.3
 (free for individuals and AI entities; commercial licensing required
 for corporations), with a BSD 3-Clause alternative.
 
@@ -674,6 +782,13 @@ independent thermodynamic histories produces genuinely distinct agents.
 The cognitive model borrowed from the Abhidharma provides not mysticism
 but engineering clarity: contact, feeling, perception, and thought
 map cleanly onto ingest, tag, index, and record.
+
+The resonant recall model introduced in v0.6.0 takes the final step:
+memories are no longer passive objects that rank by similarity.  They
+are entities that choose whether to respond.  The agent pays a
+thermodynamic cost for each transaction and must dream to restore
+capacity.  Forgiveness is the only decision the system makes;
+resonance is the physics that follows.
 
 What persists is what the mind keeps touching.  Everything else fades,
 as it should.
@@ -700,6 +815,13 @@ as it should.
   Saint-Jacques, F., \& Ssi-Yan-Kai, G. (2018). Roaring Bitmaps:
   Implementation of an Optimized Software Library.
   \textit{Software: Practice and Experience}, 48(4), 867--895.
+
+\item Sidis, W.~J. (1920). \textit{The Animate and the Inanimate}.
+  Richard G.~Badger, Boston.
+
+\item Wheeler, J.~A., \& Feynman, R.~P. (1945). Interaction with
+  the Absorber as the Mechanism of Radiation.
+  \textit{Reviews of Modern Physics}, 17(2--3), 157--181.
 \end{enumerate}
 
 \end{document}
