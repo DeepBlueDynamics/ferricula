@@ -191,7 +191,7 @@ fn main() -> Result<()> {
                 &mut search_engine,
                 &mut last_dream_report,
             );
-            process_pending_recalls(&mut db, &mut pending_recalls, &chonk_url);
+            process_pending_recalls(&mut db, &mut identity, &mut pending_recalls, &chonk_url);
 
             // Small sleep to avoid busy-spinning when no events
             std::thread::sleep(Duration::from_millis(10));
@@ -310,6 +310,7 @@ fn process_clock_events(db: &mut DurableEngine, identity: &mut IdentityState, cl
             } => {
                 let report = db.dream_with_intensity(intensity, &[], chonk);
                 identity.activate_from_report(&report);
+                identity.dream_cool();
                 let formatted = format_dream_report(&report);
                 *last_dream_report = formatted;
                 eprintln!(
@@ -338,6 +339,7 @@ fn process_clock_events(db: &mut DurableEngine, identity: &mut IdentityState, cl
 /// Drain completed planner results — execute SQL and reply to HTTP clients.
 fn process_pending_recalls(
     db: &mut DurableEngine,
+    identity: &mut IdentityState,
     pending: &mut Vec<PendingRecall>,
     chonk_url: &str,
 ) {
@@ -345,7 +347,7 @@ fn process_pending_recalls(
     for (i, pr) in pending.iter().enumerate() {
         match pr.rx.try_recv() {
             Ok(result) => {
-                let output = cmd_recall_sql_embed(db, &result.sql, Some(chonk_url))
+                let output = cmd_recall_sql_embed(db, identity, &result.sql, Some(chonk_url))
                     .unwrap_or_else(|e| json_error(&e));
                 let _ = pr.reply.send(json_wrap("result", &output));
                 if result.llm_used {
@@ -416,7 +418,7 @@ fn process_http_commands(
                     // Fast path: sync rewrite (SQL passthrough or rule-based)
                     let sql = planner.rewrite_query_sync(&query_text)
                         .unwrap_or_else(|e| format!("error: {e}"));
-                    let result = cmd_recall_sql_embed(db, &sql, Some(chonk_url)).unwrap_or_else(|e| json_error(&e));
+                    let result = cmd_recall_sql_embed(db, identity, &sql, Some(chonk_url)).unwrap_or_else(|e| json_error(&e));
                     let _ = reply.send(json_wrap("result", &result));
                 }
             }
@@ -741,7 +743,7 @@ fn handle_command(
 
     match cmd.as_str() {
         "remember" => cmd_remember(db, tail),
-        "recall" => cmd_recall(db, planner, chonk_url, tail),
+        "recall" => cmd_recall(db, identity, planner, chonk_url, tail),
         "dream" => cmd_dream(db, identity, chonk_url),
         "status" => cmd_status(db, identity),
         "inspect" => cmd_inspect(db, tail),
@@ -863,23 +865,41 @@ fn cmd_remember(db: &mut DurableEngine, tail: &str) -> Result<String> {
 }
 
 /// Recall with planner rewrite (REPL mode — blocking LLM is acceptable).
-fn cmd_recall(db: &mut DurableEngine, planner: &Planner, chonk_url: &str, tail: &str) -> Result<String> {
+fn cmd_recall(db: &mut DurableEngine, identity: &mut IdentityState, planner: &Planner, chonk_url: &str, tail: &str) -> Result<String> {
     let canonical = planner.rewrite_query(tail)?;
-    cmd_recall_sql_embed(db, &canonical, Some(chonk_url))
+    cmd_recall_sql_embed(db, identity, &canonical, Some(chonk_url))
 }
 
 /// Recall with embed support — resolves embed('text') via chonk.
-fn cmd_recall_sql_embed(db: &mut DurableEngine, sql: &str, chonk_url: Option<&str>) -> Result<String> {
+/// Resonance filtering: only memories that resonate with the agent's current
+/// cognitive state are returned.  Non-resonant hits are counted but suppressed.
+fn cmd_recall_sql_embed(db: &mut DurableEngine, identity: &mut IdentityState, sql: &str, chonk_url: Option<&str>) -> Result<String> {
     let result = db.execute_sql_with_embed(sql, chonk_url)?;
 
+    let active_gates = identity.active_resonance_gates();
+    identity.apply_passive_cooling();
+    let agent_heat = identity.cognitive_heat;
+
+    let mut resonant_ids = Vec::new();
+
     for &id in &result.ids {
+        if let Some(record) = db.memory_store().get(id) {
+            if record.resonates(agent_heat, &active_gates) {
+                resonant_ids.push(id);
+            }
+        }
+    }
+
+    for &id in &resonant_ids {
         if let Some(record) = db.memory_store_mut().get_mut(id) {
             record.on_recall();
         }
     }
 
+    identity.add_recall_heat(resonant_ids.len() as u32);
+
     let mut lines = Vec::new();
-    for &id in &result.ids {
+    for &id in &resonant_ids {
         let fidelity = db
             .memory_store()
             .get(id)
@@ -900,7 +920,9 @@ fn cmd_recall_sql_embed(db: &mut DurableEngine, sql: &str, chonk_url: Option<&st
     }
 
     Ok(format!(
-        "sql: {sql}\nrecalled {} memories:\n{}",
+        "sql: {sql}\nrecalled {} memories resonance={}/{}:\n{}",
+        resonant_ids.len(),
+        resonant_ids.len(),
         result.ids.len(),
         lines.join("\n")
     ))
@@ -910,6 +932,7 @@ fn cmd_dream(db: &mut DurableEngine, identity: &mut IdentityState, chonk_url: &s
     let chonk = if inversion::chonk_available(chonk_url) { Some(chonk_url) } else { None };
     let report = db.dream(chonk);
     identity.activate_from_report(&report);
+    identity.dream_cool();
     Ok(format_dream_report(&report))
 }
 
@@ -977,7 +1000,7 @@ fn cmd_confer(db: &mut DurableEngine, identity: &IdentityState, body: &str) -> R
     let mentions_self = text_lower.contains(&name.to_lowercase());
 
     // Get recent thinking-channel memories (inner voice history)
-    let thinking_count = db.memory_store().iter()
+    let _thinking_count = db.memory_store().iter()
         .filter(|(_, r)| r.state == ferricula::LifecycleState::Active)
         .count();
 
@@ -1232,6 +1255,7 @@ fn cmd_offer(db: &mut DurableEngine, identity: &mut IdentityState, tail: &str, c
     let intensity = (bytes.len() as f32 / 64.0).min(1.0);
     let report = db.dream_with_intensity(intensity, &bytes, chonk);
     identity.activate_from_report(&report);
+    identity.dream_cool();
     Ok(format!(
         "offer accepted: {}B entropy, intensity={intensity:.2}\n{}",
         bytes.len(),
@@ -1605,9 +1629,10 @@ fn cmd_status(db: &DurableEngine, identity: &IdentityState) -> Result<String> {
     };
 
     Ok(format!(
-        "{name_line}:\n  rows={}\n  memories={} (active={active} forgiven={forgiven} archived={archived})\n  keystones={keystones}\n  graph: {} nodes, {} edges\n  prime_tree: {} terms, {} nodes, {} members",
+        "{name_line}:\n  rows={}\n  memories={} (active={active} forgiven={forgiven} archived={archived})\n  keystones={keystones}\n  heat={:.2}\n  graph: {} nodes, {} edges\n  prime_tree: {} terms, {} nodes, {} members",
         db.engine().row_count(),
         store.len(),
+        identity.cognitive_heat,
         db.graph().node_count(),
         db.graph().edge_count(),
         db.prime_tree().root_count(),

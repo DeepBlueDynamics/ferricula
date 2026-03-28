@@ -55,7 +55,7 @@ DEFAULT_DATA_DIR = PROJECT_DIR / "data"
 
 COGNITIVE_TOOLS = {
     "remember", "recall", "reflect", "observe", "inspect",
-    "connect", "neighbors", "status", "health", "identity",
+    "connect", "neighbors", "status", "health", "identity", "embody",
 }
 SYSTEM_TOOLS = {
     "dream", "keystone", "checkpoint", "offer_entropy",
@@ -1099,9 +1099,121 @@ def ferricula_offer_entropy(source: str = "radio", target: Optional[str] = None)
     return result
 
 
+# ── Embodiment ───────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def ferricula_embody(target: Optional[str] = None, memories: int = 12) -> str:
+    """Embody a ferricula character — load identity, core memories, and mental state.
+
+    Returns everything an LLM needs to inhabit this character: identity,
+    keystone memories, recent dream imagery, and emerging conceptual links.
+    Use this at the start of a conversation to become the character.
+
+    Args:
+        target: Character name or port (e.g. "steve jobs" or "8773").
+        memories: Number of keystone memories to include (default: 12).
+    """
+    if not _use_http(target):
+        return "error: embody requires HTTP mode (a running ferricula instance)"
+
+    http = _get_http(target)
+    sections = []
+
+    # ── Identity ──
+    try:
+        raw = http.get("identity")
+        identity = json.loads(raw)
+        name = identity.get("name", "unknown")
+        hex_info = identity.get("hexagram", {})
+        hex_name = hex_info.get("name", "")
+        hex_num = hex_info.get("number", "")
+        zodiac = identity.get("horoscope", {}).get("sign_name", "")
+        primary_emo = identity.get("primary_emotion", "")
+        secondary_emo = identity.get("secondary_emotion", "")
+
+        id_lines = [f"# {name}"]
+        if hex_name:
+            id_lines.append(f"Hexagram #{hex_num} {hex_name} | {zodiac}")
+        if primary_emo:
+            emo = f"{primary_emo}/{secondary_emo}" if secondary_emo else primary_emo
+            id_lines.append(f"Emotional baseline: {emo}")
+        sections.append("\n".join(id_lines))
+    except Exception as e:
+        sections.append(f"identity: error ({e})")
+        name = "unknown"
+
+    # ── Status ──
+    try:
+        raw = http.get("status")
+        data = json.loads(raw)
+        status_text = data.get("result", raw)
+        # Extract key numbers
+        active_m = re.search(r"active=(\d+)", status_text)
+        keystones_m = re.search(r"keystones=(\d+)", status_text)
+        edges_m = re.search(r"(\d+) edges", status_text)
+        terms_m = re.search(r"(\d+) terms", status_text)
+        stats = []
+        if active_m:
+            stats.append(f"{active_m.group(1)} active memories")
+        if keystones_m:
+            stats.append(f"{keystones_m.group(1)} keystones")
+        if edges_m:
+            stats.append(f"{edges_m.group(1)} graph edges")
+        if terms_m:
+            stats.append(f"{terms_m.group(1)} terms")
+        if stats:
+            sections.append("## State\n" + ", ".join(stats))
+    except Exception:
+        pass
+
+    # ── Core memories via BM25 search ──
+    try:
+        # Search for identity-defining memories using the character's name
+        raw = http.post("search", json.dumps({"query": name}))
+        search_data = json.loads(raw)
+        results = search_data.get("results", [])
+
+        mem_lines = []
+        for hit in results[:memories]:
+            text = hit.get("text", "")
+            if text and len(text) >= 10:
+                mem_lines.append(f"- {text}")
+
+        if mem_lines:
+            sections.append("## Core memories\n" + "\n".join(mem_lines))
+    except Exception:
+        pass
+
+    # ── Latest dream ──
+    try:
+        raw = http.get("dream/latest")
+        data = json.loads(raw)
+        dream_text = data.get("result", "")
+        if dream_text and "no dreams yet" not in dream_text:
+            # Extract SKG emerging terms
+            emerging_m = re.search(r"emerging=\[([^\]]*)\]", dream_text)
+            decaying_m = re.search(r"decaying=\[([^\]]*)\]", dream_text)
+            dream_lines = ["## Recent dream state"]
+            if emerging_m and emerging_m.group(1):
+                pairs = [s.strip().replace("~", " + ") for s in emerging_m.group(1).split(",") if s.strip()]
+                if pairs:
+                    dream_lines.append("Emerging connections: " + ", ".join(pairs[:5]))
+            if decaying_m and decaying_m.group(1):
+                pairs = [s.strip().replace("~", " + ") for s in decaying_m.group(1).split(",") if s.strip()]
+                if pairs:
+                    dream_lines.append("Fading connections: " + ", ".join(pairs[:5]))
+            if len(dream_lines) > 1:
+                sections.append("\n".join(dream_lines))
+    except Exception:
+        pass
+
+    return "\n\n".join(sections)
+
+
 # ── Multi-Instance Tools ─────────────────────────────────────────────────
 
-SCAN_PORTS = [8765, 8773, 8774, 8775, 8776, 8780]
+SCAN_PORTS = [8765, 8764, 8773, 8774, 8775, 8776, 8780]
 
 
 @mcp.tool()

@@ -29,6 +29,6 @@ pub use persist::DurableEngine;
 pub use corpus::SearchEngine;
 pub use dream::DreamReport;
 pub use graph::{EdgeKind, MemoryGraph};
-pub use memory::{LifecycleState, MemoryRecord, MemoryStore};
+pub use memory::{LifecycleState, MemoryRecord, MemoryStore, ResonanceGate};
 pub use prime_tree::PrimeTree;
 pub use skg::{SkgEdge, SkgSnapshot, SkgState, SkgUpdateSummary};

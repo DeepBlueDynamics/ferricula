@@ -181,7 +181,7 @@ fn build_maps() -> (HashMap<String, Vec<String>>, HashMap<String, Vec<String>>) 
     (pali_to_code, code_to_pali)
 }
 
-/// Thread-local cached maps (built once per thread).
+// Thread-local cached maps (built once per thread).
 thread_local! {
     static MAPS: (HashMap<String, Vec<String>>, HashMap<String, Vec<String>>) = build_maps();
 }

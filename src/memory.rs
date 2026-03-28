@@ -16,6 +16,25 @@ pub const RECALL_SHRINK: f32 = 0.95;
 /// Neglect growth factor (grows alpha when ignored).
 pub const NEGLECT_GROW: f32 = 1.005;
 
+pub const HEAT_CEILING: f32 = 10.0;
+pub const HEAT_PER_RECALL: f32 = 0.3;
+pub const HEAT_COOL_RATE: f32 = 0.1;
+pub const HEAT_DREAM_COOL: f32 = 3.0;
+
+/// Gates that control whether a memory responds to a recall query.
+/// Each gate maps to a Wisdom King archetype.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResonanceGate {
+    /// Acala (Center) — fidelity must be above gate threshold.
+    Fidelity,
+    /// Yamāntaka (West) — memory must be in Active lifecycle state.
+    Lifecycle,
+    /// Trailokyavijaya (East) — not recalled too recently, not neglected too long.
+    Temporal,
+    /// Vajrayakṣa (North) — agent has capacity to absorb (heat check).
+    AgentCapacity,
+}
+
 pub fn now_epoch() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -160,6 +179,43 @@ impl MemoryRecord {
     /// Age in seconds.
     pub fn age(&self) -> u64 {
         now_epoch().saturating_sub(self.created_at)
+    }
+
+    /// Wheeler-Feynman resonance check — does this memory respond to the query?
+    /// Keystones always resonate. Other memories must pass all active gates.
+    pub fn resonates(&self, agent_heat: f32, active_gates: &[ResonanceGate]) -> bool {
+        if self.keystone {
+            return true;
+        }
+        for gate in active_gates {
+            match gate {
+                ResonanceGate::Fidelity => {
+                    if self.fidelity < FIDELITY_GATE {
+                        return false;
+                    }
+                }
+                ResonanceGate::Lifecycle => {
+                    if self.state != LifecycleState::Active {
+                        return false;
+                    }
+                }
+                ResonanceGate::Temporal => {
+                    let since_recall = now_epoch().saturating_sub(self.last_recalled);
+                    if since_recall < 2 {
+                        return false; // saturated — recalled too recently
+                    }
+                    if since_recall > 172800 {
+                        return false; // 48h neglect — out of phase
+                    }
+                }
+                ResonanceGate::AgentCapacity => {
+                    if agent_heat > HEAT_CEILING {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
     }
 }
 
@@ -359,5 +415,52 @@ mod tests {
         assert_eq!(store.in_state(LifecycleState::Active).len(), 2);
         assert_eq!(store.in_state(LifecycleState::Forgiven).len(), 1);
         assert_eq!(store.keystones().len(), 1);
+    }
+
+    // --- resonance gate tests ---
+
+    fn make_record(id: u32) -> MemoryRecord {
+        MemoryRecord::new_at(id, 0)
+    }
+
+    #[test]
+    fn resonance_keystone_always_passes() {
+        let mut r = make_record(1);
+        r.keystone = true;
+        r.fidelity = 0.01; // way below gate
+        assert!(r.resonates(100.0, &[ResonanceGate::Fidelity, ResonanceGate::AgentCapacity]));
+    }
+
+    #[test]
+    fn resonance_fidelity_gate() {
+        let mut r = make_record(1);
+        r.fidelity = FIDELITY_GATE + 0.01;
+        assert!(r.resonates(0.0, &[ResonanceGate::Fidelity]));
+        r.fidelity = FIDELITY_GATE - 0.01;
+        assert!(!r.resonates(0.0, &[ResonanceGate::Fidelity]));
+    }
+
+    #[test]
+    fn resonance_lifecycle_gate() {
+        let mut r = make_record(1);
+        assert!(r.resonates(0.0, &[ResonanceGate::Lifecycle]));
+        r.forgive();
+        assert!(!r.resonates(0.0, &[ResonanceGate::Lifecycle]));
+    }
+
+    #[test]
+    fn resonance_agent_capacity_gate() {
+        let r = make_record(1);
+        assert!(r.resonates(9.0, &[ResonanceGate::AgentCapacity]));
+        assert!(!r.resonates(11.0, &[ResonanceGate::AgentCapacity]));
+    }
+
+    #[test]
+    fn resonance_no_gates_always_passes() {
+        let mut r = make_record(1);
+        r.fidelity = 0.01;
+        r.forgive();
+        // No gates = everything passes (dormant archetypes)
+        assert!(r.resonates(100.0, &[]));
     }
 }

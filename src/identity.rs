@@ -32,6 +32,10 @@ pub struct IdentityState {
     pub identity_seed: u32,
     pub created_at: u64,
     pub archetypes: Vec<Archetype>,
+    #[serde(default)]
+    pub cognitive_heat: f32,
+    #[serde(default)]
+    pub last_heat_update: u64,
     #[serde(skip)]
     pub transform: Option<Vec<Vec<f64>>>,
     #[serde(skip)]
@@ -68,6 +72,47 @@ impl IdentityState {
                 arch.deactivate();
             }
         }
+    }
+
+    /// Apply passive cooling based on elapsed time since last update.
+    pub fn apply_passive_cooling(&mut self) {
+        let now = crate::memory::now_epoch();
+        let elapsed = now.saturating_sub(self.last_heat_update) as f32;
+        self.cognitive_heat = (self.cognitive_heat - elapsed * crate::memory::HEAT_COOL_RATE).max(0.0);
+        self.last_heat_update = now;
+    }
+
+    /// Add heat from a recall transaction.
+    pub fn add_recall_heat(&mut self, count: u32) {
+        self.apply_passive_cooling();
+        self.cognitive_heat += count as f32 * crate::memory::HEAT_PER_RECALL;
+    }
+
+    /// Cool the agent after a dream cycle.
+    pub fn dream_cool(&mut self) {
+        self.apply_passive_cooling();
+        self.cognitive_heat = (self.cognitive_heat - crate::memory::HEAT_DREAM_COOL).max(0.0);
+    }
+
+    /// Return resonance gates for currently active archetypes.
+    /// Dormant archetypes don't gate — their dimension is open.
+    pub fn active_resonance_gates(&self) -> Vec<crate::memory::ResonanceGate> {
+        use crate::memory::ResonanceGate;
+        use crate::archetypes::ArchetypeRole;
+        let mut gates = Vec::new();
+        for arch in &self.archetypes {
+            if !arch.active {
+                continue;
+            }
+            match arch.role {
+                ArchetypeRole::Advocate  => gates.push(ResonanceGate::Fidelity),
+                ArchetypeRole::Ethics    => gates.push(ResonanceGate::Lifecycle),
+                ArchetypeRole::Intuition => gates.push(ResonanceGate::Temporal),
+                ArchetypeRole::Fortune   => gates.push(ResonanceGate::AgentCapacity),
+                ArchetypeRole::Craft     => {} // Kuṇḍali — Phase 2
+            }
+        }
+        gates
     }
 }
 
@@ -123,6 +168,8 @@ pub fn load_or_create(data_dir: &str, entropy: &[u8]) -> (IdentityState, bool) {
         identity_seed: seed,
         created_at: now,
         archetypes,
+        cognitive_heat: 0.0,
+        last_heat_update: now,
         transform: None,
         private_key: None,
         public_key: None,
