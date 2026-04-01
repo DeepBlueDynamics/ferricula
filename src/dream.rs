@@ -45,9 +45,9 @@ pub fn dream_cycle(
     graph: &mut MemoryGraph,
     skg: &mut SkgState,
     prime_tree: &PrimeTree,
-    chonk_url: Option<&str>,
+    shivvr_url: Option<&str>,
 ) -> DreamReport {
-    dream_cycle_with_intensity(store, engine, graph, skg, prime_tree, 1.0, &[], chonk_url)
+    dream_cycle_with_intensity(store, engine, graph, skg, prime_tree, 1.0, &[], shivvr_url)
 }
 
 /// Run one dream cycle with entropy-modulated decay.
@@ -64,7 +64,7 @@ pub fn dream_cycle_with_intensity(
     prime_tree: &PrimeTree,
     intensity: f32,
     entropy_seed: &[u8],
-    chonk_url: Option<&str>,
+    shivvr_url: Option<&str>,
 ) -> DreamReport {
     let mut report = DreamReport::default();
     let intensity = intensity.clamp(0.0, 1.0);
@@ -176,7 +176,7 @@ pub fn dream_cycle_with_intensity(
         let should_prune = store.get(id).map_or(false, |r| r.fidelity < f32::EPSILON);
         if should_prune {
             // Deathbed confession: extract what survives before deletion.
-            if let Some(url) = chonk_url {
+            if let Some(url) = shivvr_url {
                 if let Some(row) = engine.get(id) {
                     if !row.vector.is_empty() {
                         if let Some(echo) = extract_ghost_echo(url, &row.vector) {
@@ -343,20 +343,20 @@ fn consolidate_group(store: &mut MemoryStore, graph: &mut MemoryGraph, group: &[
     edges_created
 }
 
-/// Deathbed confession: invert a dying memory's vector to text via chonk,
+/// Deathbed confession: invert a dying memory's vector to text via shivvr,
 /// then re-embed the extracted text and check round-trip fidelity.
 /// Returns the extracted text only if it passes a minimum quality threshold.
-fn extract_ghost_echo(chonk_url: &str, vector: &[f32]) -> Option<String> {
+fn extract_ghost_echo(shivvr_url: &str, vector: &[f32]) -> Option<String> {
     // Step 1: Invert the vector to approximate text.
-    let extracted = inversion::invert_vector(chonk_url, vector)?;
+    let extracted = inversion::invert_vector(shivvr_url, vector)?;
     if extracted.trim().is_empty() {
         return None;
     }
 
     // Step 2: Re-embed the extracted text and check fidelity.
-    // POST to chonk /embed to get the round-trip vector.
+    // POST to shivvr /embed to get the round-trip vector.
     let body = serde_json::json!({ "text": extracted }).to_string();
-    let response = inversion_post(chonk_url, "/embed", &body)?;
+    let response = inversion_post(shivvr_url, "/embed", &body)?;
     let val: serde_json::Value = serde_json::from_str(&response).ok()?;
     let re_embedded: Vec<f32> = val.get("embedding")
         .and_then(|v| v.as_array())
@@ -378,7 +378,7 @@ fn extract_ghost_echo(chonk_url: &str, vector: &[f32]) -> Option<String> {
     }
 }
 
-/// POST helper for chonk (re-embed during ghost extraction).
+/// POST helper for shivvr (re-embed during ghost extraction).
 fn inversion_post(base_url: &str, path: &str, body: &str) -> Option<String> {
     use std::io::{Read, Write};
     use std::net::TcpStream;

@@ -1,7 +1,7 @@
 //! Semantic fidelity verification via vec2text inversion.
 //!
 //! After consolidation warps a memory's vector, invert it back to text
-//! via chonk and compare with the original text tag. This measures whether
+//! via shivvr and compare with the original text tag. This measures whether
 //! the manifold warping preserved semantic content.
 
 use std::collections::HashSet;
@@ -20,13 +20,13 @@ pub struct InversionCheck {
     pub quality: f32,
 }
 
-/// Call chonk to embed text, return the embedding vector.
+/// Call shivvr to embed text, return the embedding vector.
 /// Applies Pali translation layer before embedding so both vocabularies
 /// (Abhidhamma Pali + computational English) land in the same vector space.
-pub fn embed_text(chonk_url: &str, text: &str) -> Option<Vec<f32>> {
+pub fn embed_text(shivvr_url: &str, text: &str) -> Option<Vec<f32>> {
     let expanded = crate::pali::expand(text);
     let body = serde_json::json!({ "text": expanded }).to_string();
-    let response = chonk_post(chonk_url, "/memory/_mcp/ingest", &body)?;
+    let response = shivvr_post(shivvr_url, "/memory/_mcp/ingest", &body)?;
     let val: serde_json::Value = serde_json::from_str(&response).ok()?;
     // Top-level embedding or nested in chunks[0]
     if let Some(emb) = val.get("embedding").and_then(|v| v.as_array()) {
@@ -48,10 +48,10 @@ pub fn embed_text(chonk_url: &str, text: &str) -> Option<Vec<f32>> {
         })
 }
 
-/// Call chonk `/invert` with a vector, return approximate text.
-pub fn invert_vector(chonk_url: &str, vector: &[f32]) -> Option<String> {
+/// Call shivvr `/invert` with a vector, return approximate text.
+pub fn invert_vector(shivvr_url: &str, vector: &[f32]) -> Option<String> {
     let body = serde_json::json!({ "embedding": vector }).to_string();
-    let response = chonk_post(chonk_url, "/invert", &body)?;
+    let response = shivvr_post(shivvr_url, "/invert", &body)?;
     let val: serde_json::Value = serde_json::from_str(&response).ok()?;
     val.get("text")
         .or_else(|| val.get("hypothesis"))
@@ -84,20 +84,20 @@ pub fn text_similarity(a: &str, b: &str) -> f32 {
     intersection as f32 / union as f32
 }
 
-/// Check if chonk is reachable.
-pub fn chonk_available(chonk_url: &str) -> bool {
-    chonk_get(chonk_url, "/health").is_some()
+/// Check if shivvr is reachable.
+pub fn shivvr_available(shivvr_url: &str) -> bool {
+    shivvr_get(shivvr_url, "/health").is_some()
 }
 
 /// Full inversion check for a memory.
 /// Needs the vector and original text from the engine.
 pub fn check_inversion_with_data(
-    chonk_url: &str,
+    shivvr_url: &str,
     memory_id: u32,
     original_text: &str,
     vector: &[f32],
 ) -> Option<InversionCheck> {
-    let inverted_text = invert_vector(chonk_url, vector)?;
+    let inverted_text = invert_vector(shivvr_url, vector)?;
     let quality = text_similarity(original_text, &inverted_text);
     Some(InversionCheck {
         memory_id,
@@ -198,11 +198,11 @@ fn http_request(base_url: &str, method: &str, path: &str, body: Option<&str>) ->
     Some(response[body_start..].to_string())
 }
 
-fn chonk_post(base_url: &str, path: &str, body: &str) -> Option<String> {
+fn shivvr_post(base_url: &str, path: &str, body: &str) -> Option<String> {
     http_request(base_url, "POST", path, Some(body))
 }
 
-fn chonk_get(base_url: &str, path: &str) -> Option<String> {
+fn shivvr_get(base_url: &str, path: &str) -> Option<String> {
     http_request(base_url, "GET", path, None)
 }
 

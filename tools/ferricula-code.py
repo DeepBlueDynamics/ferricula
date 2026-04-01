@@ -9,7 +9,7 @@ You don't search code — you remember it.
 
 Environment:
     FERRICULA_URL: ferricula HTTP instance (default http://localhost:8765)
-    CHONK_URL: embedding service (default http://nemesis:8080)
+    SHIVVR_URL: embedding service (default http://nemesis:8080)
 """
 
 import os
@@ -26,7 +26,7 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("ferricula-code")
 
 FERRICULA_URL = os.environ.get("FERRICULA_URL", "http://localhost:8765")
-CHONK_URL = os.environ.get("CHONK_URL", "http://nemesis:8080")
+SHIVVR_URL = os.environ.get("SHIVVR_URL", "http://nemesis:8080")
 
 # File extensions worth indexing
 CODE_EXTENSIONS = {
@@ -67,15 +67,15 @@ def _get(url: str, timeout: int = 15) -> dict:
 
 
 def _embed(text: str) -> list[float]:
-    """Embed text via chonk, return dense vector."""
-    result = _post(f"{CHONK_URL}/memory/_mcp/ingest", {"text": text}, timeout=30)
+    """Embed text via shivvr, return dense vector."""
+    result = _post(f"{SHIVVR_URL}/memory/_mcp/ingest", {"text": text}, timeout=30)
     if "embedding" in result:
         return result["embedding"]
     return result["chunks"][0]["embedding"]
 
 
 def _remember(text: str, keystone: bool = True) -> dict:
-    """Embed text via chonk and store as a keystone memory in ferricula."""
+    """Embed text via shivvr and store as a keystone memory in ferricula."""
     vector = _embed(text[:500])  # cap text for embedding
     mid = int(time.time() * 1000) % (2**31)
     row = {

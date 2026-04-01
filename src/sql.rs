@@ -15,7 +15,7 @@ pub fn execute_sql(engine: &Engine, sql: &str) -> Result<QueryResult> {
     execute_sql_with_embed(engine, sql, None)
 }
 
-pub fn execute_sql_with_embed(engine: &Engine, sql: &str, chonk_url: Option<&str>) -> Result<QueryResult> {
+pub fn execute_sql_with_embed(engine: &Engine, sql: &str, shivvr_url: Option<&str>) -> Result<QueryResult> {
     let dialect = GenericDialect {};
     let statements = Parser::parse_sql(&dialect, sql)?;
     if statements.len() != 1 {
@@ -24,7 +24,7 @@ pub fn execute_sql_with_embed(engine: &Engine, sql: &str, chonk_url: Option<&str
 
     let statement = &statements[0];
     let ids = match statement {
-        Statement::Query(query) => execute_query(engine, query, chonk_url)?,
+        Statement::Query(query) => execute_query(engine, query, shivvr_url)?,
         _ => bail!("only SELECT/QUERY statements are supported"),
     };
 
@@ -33,18 +33,18 @@ pub fn execute_sql_with_embed(engine: &Engine, sql: &str, chonk_url: Option<&str
     })
 }
 
-fn execute_query(engine: &Engine, query: &Query, chonk_url: Option<&str>) -> Result<RoaringBitmap> {
-    execute_set_expr(engine, &query.body, chonk_url)
+fn execute_query(engine: &Engine, query: &Query, shivvr_url: Option<&str>) -> Result<RoaringBitmap> {
+    execute_set_expr(engine, &query.body, shivvr_url)
 }
 
-fn execute_set_expr(engine: &Engine, body: &SetExpr, chonk_url: Option<&str>) -> Result<RoaringBitmap> {
+fn execute_set_expr(engine: &Engine, body: &SetExpr, shivvr_url: Option<&str>) -> Result<RoaringBitmap> {
     match body {
-        SetExpr::Select(select) => execute_select(engine, select, chonk_url),
+        SetExpr::Select(select) => execute_select(engine, select, shivvr_url),
         SetExpr::SetOperation {
             left, op, right, ..
         } => {
-            let left_bitmap = execute_set_expr(engine, left, chonk_url)?;
-            let right_bitmap = execute_set_expr(engine, right, chonk_url)?;
+            let left_bitmap = execute_set_expr(engine, left, shivvr_url)?;
+            let right_bitmap = execute_set_expr(engine, right, shivvr_url)?;
             let out = match op {
                 SetOperator::Union => &left_bitmap | &right_bitmap,
                 SetOperator::Intersect => &left_bitmap & &right_bitmap,
@@ -52,13 +52,13 @@ fn execute_set_expr(engine: &Engine, body: &SetExpr, chonk_url: Option<&str>) ->
             };
             Ok(out)
         }
-        SetExpr::Query(query) => execute_query(engine, query, chonk_url),
+        SetExpr::Query(query) => execute_query(engine, query, shivvr_url),
         SetExpr::Values(_) => bail!("VALUES is not supported"),
         _ => bail!("unsupported SELECT body in scaffold"),
     }
 }
 
-fn execute_select(engine: &Engine, select: &Select, chonk_url: Option<&str>) -> Result<RoaringBitmap> {
+fn execute_select(engine: &Engine, select: &Select, shivvr_url: Option<&str>) -> Result<RoaringBitmap> {
     let Some(from) = select.from.first() else {
         bail!("missing FROM clause");
     };
@@ -69,36 +69,36 @@ fn execute_select(engine: &Engine, select: &Select, chonk_url: Option<&str>) -> 
 
     let all = engine.all_bitmap();
     match &select.selection {
-        Some(expr) => eval_predicate(engine, expr, &all, chonk_url),
+        Some(expr) => eval_predicate(engine, expr, &all, shivvr_url),
         None => Ok(all),
     }
 }
 
-fn eval_predicate(engine: &Engine, expr: &Expr, universe: &RoaringBitmap, chonk_url: Option<&str>) -> Result<RoaringBitmap> {
+fn eval_predicate(engine: &Engine, expr: &Expr, universe: &RoaringBitmap, shivvr_url: Option<&str>) -> Result<RoaringBitmap> {
     match expr {
         Expr::BinaryOp { left, op, right } => match op {
             BinaryOperator::And => {
-                let l = eval_predicate(engine, left, universe, chonk_url)?;
-                let r = eval_predicate(engine, right, universe, chonk_url)?;
+                let l = eval_predicate(engine, left, universe, shivvr_url)?;
+                let r = eval_predicate(engine, right, universe, shivvr_url)?;
                 Ok(&l & &r)
             }
             BinaryOperator::Or => {
-                let l = eval_predicate(engine, left, universe, chonk_url)?;
-                let r = eval_predicate(engine, right, universe, chonk_url)?;
+                let l = eval_predicate(engine, left, universe, shivvr_url)?;
+                let r = eval_predicate(engine, right, universe, shivvr_url)?;
                 Ok(&l | &r)
             }
             BinaryOperator::Eq => eval_eq_predicate(engine, left, right),
             _ => bail!("unsupported binary operator in WHERE: {op:?}"),
         },
-        Expr::Nested(inner) => eval_predicate(engine, inner, universe, chonk_url),
+        Expr::Nested(inner) => eval_predicate(engine, inner, universe, shivvr_url),
         Expr::UnaryOp {
             op: UnaryOperator::Not,
             expr,
         } => {
-            let nested = eval_predicate(engine, expr, universe, chonk_url)?;
+            let nested = eval_predicate(engine, expr, universe, shivvr_url)?;
             Ok(universe - &nested)
         }
-        Expr::Function(function) => eval_vector_function(engine, function, None, chonk_url),
+        Expr::Function(function) => eval_vector_function(engine, function, None, shivvr_url),
         _ => bail!("unsupported WHERE expression in scaffold: {expr:?}"),
     }
 }
@@ -119,7 +119,7 @@ fn eval_vector_function(
     engine: &Engine,
     function: &sqlparser::ast::Function,
     candidate_filter: Option<&RoaringBitmap>,
-    chonk_url: Option<&str>,
+    shivvr_url: Option<&str>,
 ) -> Result<RoaringBitmap> {
     let fn_name = function.name.to_string().to_lowercase();
     let args = function_args_as_exprs(&function.args)?;
@@ -128,7 +128,7 @@ fn eval_vector_function(
     }
 
     // Resolve first arg: either embed('text') function call or raw vector literal
-    let query = resolve_vector_arg(args[0], chonk_url)?;
+    let query = resolve_vector_arg(args[0], shivvr_url)?;
 
     let k_text = extract_literal_as_string(args[1])?;
     let k: usize = k_text.parse()?;
@@ -142,10 +142,10 @@ fn eval_vector_function(
 }
 
 /// Resolve the first argument of a vector function.
-/// Handles both `embed('text')` (calls chonk) and raw vector literals `'[1,0,0]'`.
-fn resolve_vector_arg(expr: &Expr, chonk_url: Option<&str>) -> Result<Vec<f32>> {
+/// Handles both `embed('text')` (calls shivvr) and raw vector literals `'[1,0,0]'`.
+fn resolve_vector_arg(expr: &Expr, shivvr_url: Option<&str>) -> Result<Vec<f32>> {
     match expr {
-        // embed('text') — call chonk to get the vector
+        // embed('text') — call shivvr to get the vector
         Expr::Function(func) => {
             let name = func.name.to_string().to_lowercase();
             if name != "embed" {
@@ -156,11 +156,11 @@ fn resolve_vector_arg(expr: &Expr, chonk_url: Option<&str>) -> Result<Vec<f32>> 
                 bail!("embed() requires a text argument");
             }
             let text = extract_literal_as_string(inner_args[0])?;
-            let url = chonk_url.ok_or_else(|| {
+            let url = shivvr_url.ok_or_else(|| {
                 anyhow!("embed() requires CHONK_URL but no embedding service is configured")
             })?;
             inversion::embed_text(url, &text)
-                .ok_or_else(|| anyhow!("embed() failed: chonk did not return a vector for {:?}", text))
+                .ok_or_else(|| anyhow!("embed() failed: shivvr did not return a vector for {:?}", text))
         }
         // Raw vector literal: '[1,0,0]' or '1,0,0'
         _ => {

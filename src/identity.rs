@@ -39,6 +39,8 @@ pub struct IdentityState {
     #[serde(skip)]
     pub transform: Option<Vec<Vec<f64>>>,
     #[serde(skip)]
+    pub vector_transform: Option<crate::transform::VectorTransform>,
+    #[serde(skip)]
     pub private_key: Option<[u8; 32]>,
     #[serde(skip)]
     pub public_key: Option<[u8; 32]>,
@@ -119,12 +121,28 @@ impl IdentityState {
 /// Load existing identity or create a new one.
 ///
 /// Returns `(state, is_new)` — caller should write anchor memory if `is_new`.
+/// Expand a u32 identity seed into a full 32-byte key via HKDF-SHA256.
+fn expand_seed(seed: u32) -> [u8; 32] {
+    use hkdf::Hkdf;
+    use sha2::Sha256;
+    let ikm = seed.to_le_bytes();
+    let hk = Hkdf::<Sha256>::new(Some(b"ferricula-identity"), &ikm);
+    let mut okm = [0u8; 32];
+    hk.expand(b"ferricula-vector-transform", &mut okm)
+        .expect("hkdf expand");
+    okm
+}
+
 pub fn load_or_create(data_dir: &str, entropy: &[u8]) -> (IdentityState, bool) {
     let path = Path::new(data_dir).join(IDENTITY_FILE);
 
     // Try loading existing
     if let Ok(contents) = fs::read_to_string(&path) {
-        if let Ok(state) = serde_json::from_str::<IdentityState>(&contents) {
+        if let Ok(mut state) = serde_json::from_str::<IdentityState>(&contents) {
+            // Regenerate runtime-only fields from seed via HKDF expansion
+            let seed_bytes = expand_seed(state.identity_seed);
+            state.transform = orthogonal_from_seed(&seed_bytes, 4).ok();
+            state.vector_transform = crate::transform::VectorTransform::from_seed(&seed_bytes, 768).ok();
             return (state, false);
         }
     }
@@ -184,11 +202,12 @@ pub fn load_or_create(data_dir: &str, entropy: &[u8]) -> (IdentityState, bool) {
     state.private_key = Some(priv_key);
     state.public_key = Some(pub_key);
 
-    // Self-transform seed from identity seed (no sharing yet)
-    let mut seed_bytes = [0u8; 32];
-    seed_bytes[..4].copy_from_slice(&seed.to_le_bytes());
+    // Self-transform seed from identity seed via HKDF expansion
+    let seed_bytes = expand_seed(seed);
     let ortho = orthogonal_from_seed(&seed_bytes, 4).ok();
     state.transform = ortho;
+    // 768-dimensional vector encryption for geometric trust
+    state.vector_transform = crate::transform::VectorTransform::from_seed(&seed_bytes, 768).ok();
 
     // Save to disk
     if let Ok(json) = serde_json::to_string_pretty(&state) {

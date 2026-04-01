@@ -64,8 +64,8 @@ impl DurableEngine {
         self.engine.execute_sql(sql)
     }
 
-    pub fn execute_sql_with_embed(&self, sql: &str, chonk_url: Option<&str>) -> Result<QueryResult> {
-        self.engine.execute_sql_with_embed(sql, chonk_url)
+    pub fn execute_sql_with_embed(&self, sql: &str, shivvr_url: Option<&str>) -> Result<QueryResult> {
+        self.engine.execute_sql_with_embed(sql, shivvr_url)
     }
 
     // --- Memory record operations ---
@@ -147,14 +147,14 @@ impl DurableEngine {
 
     // --- Dream cycle ---
 
-    pub fn dream(&mut self, chonk_url: Option<&str>) -> crate::dream::DreamReport {
+    pub fn dream(&mut self, shivvr_url: Option<&str>) -> crate::dream::DreamReport {
         crate::dream::dream_cycle(
             &mut self.memory_store,
             &self.engine,
             &mut self.graph,
             &mut self.skg,
             &self.prime_tree,
-            chonk_url,
+            shivvr_url,
         )
     }
 
@@ -162,7 +162,7 @@ impl DurableEngine {
         &mut self,
         intensity: f32,
         entropy_seed: &[u8],
-        chonk_url: Option<&str>,
+        shivvr_url: Option<&str>,
     ) -> crate::dream::DreamReport {
         crate::dream::dream_cycle_with_intensity(
             &mut self.memory_store,
@@ -172,7 +172,7 @@ impl DurableEngine {
             &self.prime_tree,
             intensity,
             entropy_seed,
-            chonk_url,
+            shivvr_url,
         )
     }
 

@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/license-Gnosis_AI--Sovereign-blue?style=flat-square)](LICENSE.md)
 [![Rust](https://img.shields.io/badge/rust-2024_edition-DEA584?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![MCP](https://img.shields.io/badge/MCP-compatible-blueviolet?style=flat-square)](https://modelcontextprotocol.io)
-[![Tests](https://img.shields.io/badge/tests-89_passing-brightgreen?style=flat-square)](#testing)
+[![Tests](https://img.shields.io/badge/tests-92_passing-brightgreen?style=flat-square)](#testing)
 [![Surface Scoping](https://img.shields.io/badge/surfaces-cognitive%20%7C%20system-ff6b6b?style=flat-square)](#tool-surfaces)
 [![Thermodynamic](https://img.shields.io/badge/memory-thermodynamic-00d4ff?style=flat-square)](#thermodynamic-lifecycle)
 
@@ -88,6 +88,35 @@ Add to your `.mcp.json`:
   }
 }
 ```
+
+### Multi-Instance
+
+Target different characters by name or port:
+
+```json
+{
+  "mcpServers": {
+    "ferricula": {
+      "command": "python",
+      "args": ["tools/ferricula-mcp.py", "--port", "8780", "--name", "assis"],
+      "env": {
+        "CHONK_URL": "https://shivvr.nuts.services"
+      }
+    }
+  }
+}
+```
+
+Every tool accepts an optional `target` parameter to route calls to a specific character instance:
+
+```python
+ferricula_status(target="assis")       # by name
+ferricula_recall("physics", target="8774")  # by port
+ferricula_discover()                   # scan ports, auto-register
+ferricula_list_characters()            # show registered instances
+```
+
+The `discover` tool scans ports (default: 8765, 8773-8776, 8780) and calls `/identity` to find running characters.
 
 ## Tool Surfaces
 
@@ -212,7 +241,7 @@ All responses are `application/json` with `Access-Control-Allow-Origin: *`.
 |----------|---------|-------------|
 | `AGENT_KEY` | _(none)_ | Anthropic API key for LLM query rewriting |
 | `FERRICULA_URL` | `http://localhost:8765` | HTTP transport for MCP server |
-| `CHONK_URL` | `http://localhost:8080` | gnosis-chunk for embedding + inversion |
+| `CHONK_URL` | `http://localhost:8080` | gnosis-chunk for embedding + inversion (HTTPS supported) |
 | `RADIO_URL` | `http://localhost:9080` | gnosis-radio for time + entropy |
 | `CLOCK_TICK_SECS` | `60` | Clock poll interval |
 | `DREAM_THRESHOLD_BYTES` | `16` | Entropy bytes to trigger dream |
@@ -231,7 +260,7 @@ All responses are `application/json` with `Access-Control-Allow-Origin: *`.
 | `dream.rs` | Steward | 460 | Dream cycle orchestration |
 | `casting.rs` | Steward | 530 | King Wen table, yarrow stalk, zodiac |
 | `identity.rs` | Steward | 232 | IdentityState, load_or_create, anchor |
-| `inversion.rs` | Steward | 187 | Vec2text quality check, Jaccard similarity |
+| `inversion.rs` | Steward | 210 | Vec2text quality check, Jaccard similarity, HTTP/TLS |
 | `archetypes.rs` | Steward | 206 | 5 roles, state machine, entropy tiers |
 | `clock.rs` | Steward | 403 | Entropy clock, radio polling |
 | `graph.rs` | Weaver | 225 | Bidirectional edges, centrality |
@@ -242,7 +271,7 @@ All responses are `application/json` with `Access-Control-Allow-Origin: *`.
 ## Testing
 
 ```bash
-cargo test           # 89 tests
+cargo test           # 92 tests
 cargo test planner   # Query rewrite (rule-based + SQL passthrough)
 cargo test casting   # King Wen completeness, yarrow distribution, zodiac
 cargo test identity  # Load/create/reload, anchor creation

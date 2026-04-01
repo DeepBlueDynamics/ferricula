@@ -115,8 +115,8 @@ fn main() -> Result<()> {
     let planner = Planner::new(agent_key);
 
     // Load or create identity
-    let chonk_url =
-        std::env::var("CHONK_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let shivvr_url =
+        std::env::var("SHIVVR_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
     let identity_entropy = get_identity_entropy();
     let (mut identity, is_new) = ferricula::identity::load_or_create(&data_dir, &identity_entropy);
     if is_new {
@@ -179,19 +179,19 @@ fn main() -> Result<()> {
                 break;
             }
 
-            process_clock_events(&mut db, &mut identity, &clock_rx, &chonk_url, &mut last_dream_report);
+            process_clock_events(&mut db, &mut identity, &clock_rx, &shivvr_url, &mut last_dream_report);
             process_http_commands(
                 &mut db,
                 &planner,
                 &clock_telemetry,
                 &mut identity,
-                &chonk_url,
+                &shivvr_url,
                 &http_rx,
                 &mut pending_recalls,
                 &mut search_engine,
                 &mut last_dream_report,
             );
-            process_pending_recalls(&mut db, &mut identity, &mut pending_recalls, &chonk_url);
+            process_pending_recalls(&mut db, &mut identity, &mut pending_recalls, &shivvr_url);
 
             // Small sleep to avoid busy-spinning when no events
             std::thread::sleep(Duration::from_millis(10));
@@ -234,7 +234,7 @@ fn main() -> Result<()> {
 
             {
                 let mut _repl_dream = String::new();
-                process_clock_events(&mut db, &mut identity, &clock_rx, &chonk_url, &mut _repl_dream);
+                process_clock_events(&mut db, &mut identity, &clock_rx, &shivvr_url, &mut _repl_dream);
             }
 
             match stdin_rx.recv_timeout(Duration::from_millis(500)) {
@@ -263,7 +263,7 @@ fn main() -> Result<()> {
                         continue;
                     }
 
-                    match handle_command(&mut db, &planner, &mut identity, &clock_telemetry, &chonk_url, &line) {
+                    match handle_command(&mut db, &planner, &mut identity, &clock_telemetry, &shivvr_url, &line) {
                         Ok(output) => println!("{output}"),
                         Err(err) => eprintln!("error: {err:#}"),
                     }
@@ -299,8 +299,8 @@ fn get_identity_entropy() -> Vec<u8> {
 }
 
 /// Drain all pending clock events and act on them.
-fn process_clock_events(db: &mut DurableEngine, identity: &mut IdentityState, clock_rx: &mpsc::Receiver<ClockEvent>, chonk_url: &str, last_dream_report: &mut String) {
-    let chonk = if inversion::chonk_available(chonk_url) { Some(chonk_url) } else { None };
+fn process_clock_events(db: &mut DurableEngine, identity: &mut IdentityState, clock_rx: &mpsc::Receiver<ClockEvent>, shivvr_url: &str, last_dream_report: &mut String) {
+    let shivvr = if inversion::shivvr_available(shivvr_url) { Some(shivvr_url) } else { None };
     while let Ok(event) = clock_rx.try_recv() {
         match event {
             ClockEvent::DreamTrigger {
@@ -308,7 +308,7 @@ fn process_clock_events(db: &mut DurableEngine, identity: &mut IdentityState, cl
                 intensity,
                 entropy_bytes,
             } => {
-                let report = db.dream_with_intensity(intensity, &[], chonk);
+                let report = db.dream_with_intensity(intensity, &[], shivvr);
                 identity.activate_from_report(&report);
                 identity.dream_cool();
                 let formatted = format_dream_report(&report);
@@ -341,13 +341,13 @@ fn process_pending_recalls(
     db: &mut DurableEngine,
     identity: &mut IdentityState,
     pending: &mut Vec<PendingRecall>,
-    chonk_url: &str,
+    shivvr_url: &str,
 ) {
     let mut completed = Vec::new();
     for (i, pr) in pending.iter().enumerate() {
         match pr.rx.try_recv() {
             Ok(result) => {
-                let output = cmd_recall_sql_embed(db, identity, &result.sql, Some(chonk_url))
+                let output = cmd_recall_sql_embed(db, identity, &result.sql, Some(shivvr_url))
                     .unwrap_or_else(|e| json_error(&e));
                 let _ = pr.reply.send(json_wrap("result", &output));
                 if result.llm_used {
@@ -378,7 +378,7 @@ fn process_http_commands(
     planner: &Planner,
     telemetry: &Arc<ClockTelemetry>,
     identity: &mut IdentityState,
-    chonk_url: &str,
+    shivvr_url: &str,
     http_rx: &mpsc::Receiver<HttpCommand>,
     pending_recalls: &mut Vec<PendingRecall>,
     search_engine: &mut SearchEngine,
@@ -395,7 +395,13 @@ fn process_http_commands(
                         let text = v.get("tags")?.get("text")?.as_str()?.to_string();
                         Some((id, text))
                     });
-                let result = cmd_remember(db, &body).unwrap_or_else(|e| json_error(&e));
+                // Encrypt vector with identity transform before storing
+                let encrypted_body = if let Some(ref vt) = identity.vector_transform {
+                    encrypt_vector_in_body(&body, vt)
+                } else {
+                    body.clone()
+                };
+                let result = cmd_remember(db, &encrypted_body).unwrap_or_else(|e| json_error(&e));
                 // Update search engine with new doc
                 if let Some((id, text)) = text_for_index {
                     search_engine.add_document(id, &text);
@@ -418,12 +424,12 @@ fn process_http_commands(
                     // Fast path: sync rewrite (SQL passthrough or rule-based)
                     let sql = planner.rewrite_query_sync(&query_text)
                         .unwrap_or_else(|e| format!("error: {e}"));
-                    let result = cmd_recall_sql_embed(db, identity, &sql, Some(chonk_url)).unwrap_or_else(|e| json_error(&e));
+                    let result = cmd_recall_sql_embed(db, identity, &sql, Some(shivvr_url)).unwrap_or_else(|e| json_error(&e));
                     let _ = reply.send(json_wrap("result", &result));
                 }
             }
             HttpCommand::Dream { body: _, reply } => {
-                let result = cmd_dream(db, identity, chonk_url).unwrap_or_else(|e| json_error(&e));
+                let result = cmd_dream(db, identity, shivvr_url).unwrap_or_else(|e| json_error(&e));
                 *last_dream_report = result.clone();
                 let _ = reply.send(json_wrap("result", &result));
             }
@@ -436,7 +442,7 @@ fn process_http_commands(
                 let _ = reply.send(json_wrap("result", &result));
             }
             HttpCommand::Offer { body, reply } => {
-                let result = cmd_offer(db, identity, &body, chonk_url).unwrap_or_else(|e| json_error(&e));
+                let result = cmd_offer(db, identity, &body, shivvr_url).unwrap_or_else(|e| json_error(&e));
                 *last_dream_report = result.clone();
                 let _ = reply.send(json_wrap("result", &result));
             }
@@ -483,7 +489,7 @@ fn process_http_commands(
                 let _ = reply.send(json_wrap("result", &result));
             }
             HttpCommand::InversionCheck { id, reply } => {
-                let result = handle_inversion_check(db, chonk_url, id);
+                let result = handle_inversion_check(db, shivvr_url, id);
                 let _ = reply.send(result);
             }
             HttpCommand::Skg { reply } => {
@@ -512,14 +518,14 @@ fn process_http_commands(
                 let _ = reply.send(result);
             }
             HttpCommand::Hybrid { body, reply } => {
-                let result = handle_hybrid(db, search_engine, &body, chonk_url);
+                let result = handle_hybrid(db, search_engine, &body, shivvr_url);
                 let _ = reply.send(result);
             }
             HttpCommand::Glossary { reply } => {
                 let _ = reply.send(ferricula::pali::glossary_json());
             }
             HttpCommand::Dashboard { reply } => {
-                let _ = reply.send(build_dashboard(db, identity, telemetry, chonk_url));
+                let _ = reply.send(build_dashboard(db, identity, telemetry, shivvr_url));
             }
             HttpCommand::Confer { body, reply } => {
                 let result = cmd_confer(db, identity, &body).unwrap_or_else(|e| json_error(&e));
@@ -576,12 +582,12 @@ fn handle_disconnect_json(db: &mut DurableEngine, body: &str) -> Result<String> 
 }
 
 /// Handle inversion check for a memory.
-fn handle_inversion_check(db: &DurableEngine, chonk_url: &str, id: u32) -> String {
+fn handle_inversion_check(db: &DurableEngine, shivvr_url: &str, id: u32) -> String {
     use ferricula::inversion;
 
-    if !inversion::chonk_available(chonk_url) {
+    if !inversion::shivvr_available(shivvr_url) {
         return serde_json::json!({
-            "error": "chonk not reachable",
+            "error": "shivvr not reachable",
             "memory_id": id,
         })
         .to_string();
@@ -601,7 +607,7 @@ fn handle_inversion_check(db: &DurableEngine, chonk_url: &str, id: u32) -> Strin
         .to_string();
     }
 
-    match inversion::check_inversion_with_data(chonk_url, id, &original_text, &row.vector) {
+    match inversion::check_inversion_with_data(shivvr_url, id, &original_text, &row.vector) {
         Some(check) => serde_json::to_string(&check).unwrap_or_else(|_| "{}".to_string()),
         None => serde_json::json!({
             "error": "inversion failed",
@@ -643,7 +649,7 @@ fn handle_search(db: &DurableEngine, search_engine: &SearchEngine, body: &str) -
 }
 
 /// Handle POST /hybrid — fused vector + BM25 search.
-fn handle_hybrid(db: &DurableEngine, search_engine: &SearchEngine, body: &str, chonk_url: &str) -> String {
+fn handle_hybrid(db: &DurableEngine, search_engine: &SearchEngine, body: &str, shivvr_url: &str) -> String {
     let val: serde_json::Value = match serde_json::from_str(body) {
         Ok(v) => v,
         Err(e) => return serde_json::json!({"error": format!("{e}")}).to_string(),
@@ -652,10 +658,10 @@ fn handle_hybrid(db: &DurableEngine, search_engine: &SearchEngine, body: &str, c
     let k = val.get("k").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
     let weight = val.get("weight").and_then(|v| v.as_f64()).unwrap_or(0.5);
 
-    // Get vector hits from chonk embed + cosine search
-    let vector_hits: Vec<(u32, f32)> = if inversion::chonk_available(chonk_url) {
-        // Embed query via chonk
-        match inversion::embed_text(chonk_url, query) {
+    // Get vector hits from shivvr embed + cosine search
+    let vector_hits: Vec<(u32, f32)> = if inversion::shivvr_available(shivvr_url) {
+        // Embed query via shivvr
+        match inversion::embed_text(shivvr_url, query) {
             Some(qvec) => {
                 let hits = db.engine().vector_topk(&qvec, k * 2, DistanceMetric::Cosine, None);
                 hits.into_iter().map(|h| (h.id, h.score)).collect()
@@ -691,6 +697,24 @@ fn handle_hybrid(db: &DurableEngine, search_engine: &SearchEngine, body: &str, c
 /// Wrap a string result in JSON.
 fn json_wrap(key: &str, value: &str) -> String {
     serde_json::json!({ key: value }).to_string()
+}
+
+/// Encrypt the vector field in a remember JSON body using the identity transform.
+fn encrypt_vector_in_body(body: &str, vt: &ferricula::transform::VectorTransform) -> String {
+    let mut val: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(_) => return body.to_string(),
+    };
+    if let Some(arr) = val.get("vector").and_then(|v| v.as_array()) {
+        let plain: Vec<f32> = arr.iter()
+            .filter_map(|x| x.as_f64().map(|f| f as f32))
+            .collect();
+        if !plain.is_empty() {
+            let encrypted = vt.encrypt(&plain);
+            val["vector"] = serde_json::json!(encrypted);
+        }
+    }
+    val.to_string()
 }
 
 /// Format an error as JSON.
@@ -731,7 +755,7 @@ fn handle_command(
     planner: &Planner,
     identity: &mut IdentityState,
     telemetry: &Arc<ClockTelemetry>,
-    chonk_url: &str,
+    shivvr_url: &str,
     line: &str,
 ) -> Result<String> {
     let mut parts = line.splitn(2, ' ');
@@ -743,8 +767,8 @@ fn handle_command(
 
     match cmd.as_str() {
         "remember" => cmd_remember(db, tail),
-        "recall" => cmd_recall(db, identity, planner, chonk_url, tail),
-        "dream" => cmd_dream(db, identity, chonk_url),
+        "recall" => cmd_recall(db, identity, planner, shivvr_url, tail),
+        "dream" => cmd_dream(db, identity, shivvr_url),
         "status" => cmd_status(db, identity),
         "inspect" => cmd_inspect(db, tail),
         "keystone" => cmd_keystone(db, tail),
@@ -760,7 +784,7 @@ fn handle_command(
             }
         }
         "clock" => cmd_clock(telemetry),
-        "offer" => cmd_offer(db, identity, tail, chonk_url),
+        "offer" => cmd_offer(db, identity, tail, shivvr_url),
         "upsert" => {
             let row = parse_row_json(tail)?;
             db.upsert(row)?;
@@ -773,7 +797,7 @@ fn handle_command(
         }
         "query" => {
             let canonical = planner.rewrite_query(tail)?;
-            let result = db.execute_sql_with_embed(&canonical, Some(chonk_url))?;
+            let result = db.execute_sql_with_embed(&canonical, Some(shivvr_url))?;
             Ok(format!("ids={:?}", result.ids))
         }
         "rewrite" => {
@@ -865,16 +889,16 @@ fn cmd_remember(db: &mut DurableEngine, tail: &str) -> Result<String> {
 }
 
 /// Recall with planner rewrite (REPL mode — blocking LLM is acceptable).
-fn cmd_recall(db: &mut DurableEngine, identity: &mut IdentityState, planner: &Planner, chonk_url: &str, tail: &str) -> Result<String> {
+fn cmd_recall(db: &mut DurableEngine, identity: &mut IdentityState, planner: &Planner, shivvr_url: &str, tail: &str) -> Result<String> {
     let canonical = planner.rewrite_query(tail)?;
-    cmd_recall_sql_embed(db, identity, &canonical, Some(chonk_url))
+    cmd_recall_sql_embed(db, identity, &canonical, Some(shivvr_url))
 }
 
-/// Recall with embed support — resolves embed('text') via chonk.
+/// Recall with embed support — resolves embed('text') via shivvr.
 /// Resonance filtering: only memories that resonate with the agent's current
 /// cognitive state are returned.  Non-resonant hits are counted but suppressed.
-fn cmd_recall_sql_embed(db: &mut DurableEngine, identity: &mut IdentityState, sql: &str, chonk_url: Option<&str>) -> Result<String> {
-    let result = db.execute_sql_with_embed(sql, chonk_url)?;
+fn cmd_recall_sql_embed(db: &mut DurableEngine, identity: &mut IdentityState, sql: &str, shivvr_url: Option<&str>) -> Result<String> {
+    let result = db.execute_sql_with_embed(sql, shivvr_url)?;
 
     let active_gates = identity.active_resonance_gates();
     identity.apply_passive_cooling();
@@ -928,9 +952,9 @@ fn cmd_recall_sql_embed(db: &mut DurableEngine, identity: &mut IdentityState, sq
     ))
 }
 
-fn cmd_dream(db: &mut DurableEngine, identity: &mut IdentityState, chonk_url: &str) -> Result<String> {
-    let chonk = if inversion::chonk_available(chonk_url) { Some(chonk_url) } else { None };
-    let report = db.dream(chonk);
+fn cmd_dream(db: &mut DurableEngine, identity: &mut IdentityState, shivvr_url: &str) -> Result<String> {
+    let shivvr = if inversion::shivvr_available(shivvr_url) { Some(shivvr_url) } else { None };
+    let report = db.dream(shivvr);
     identity.activate_from_report(&report);
     identity.dream_cool();
     Ok(format_dream_report(&report))
@@ -1242,7 +1266,7 @@ fn cmd_clock(telemetry: &Arc<ClockTelemetry>) -> Result<String> {
     ))
 }
 
-fn cmd_offer(db: &mut DurableEngine, identity: &mut IdentityState, tail: &str, chonk_url: &str) -> Result<String> {
+fn cmd_offer(db: &mut DurableEngine, identity: &mut IdentityState, tail: &str, shivvr_url: &str) -> Result<String> {
     let hex = tail.trim();
     if hex.is_empty() {
         bail!("offer: provide hex-encoded entropy (e.g. 'offer deadbeef')");
@@ -1251,9 +1275,9 @@ fn cmd_offer(db: &mut DurableEngine, identity: &mut IdentityState, tail: &str, c
     if bytes.is_empty() {
         bail!("offer: invalid hex string");
     }
-    let chonk = if inversion::chonk_available(chonk_url) { Some(chonk_url) } else { None };
+    let shivvr = if inversion::shivvr_available(shivvr_url) { Some(shivvr_url) } else { None };
     let intensity = (bytes.len() as f32 / 64.0).min(1.0);
-    let report = db.dream_with_intensity(intensity, &bytes, chonk);
+    let report = db.dream_with_intensity(intensity, &bytes, shivvr);
     identity.activate_from_report(&report);
     identity.dream_cool();
     Ok(format!(
@@ -1297,7 +1321,7 @@ fn build_dashboard(
     db: &DurableEngine,
     identity: &IdentityState,
     telemetry: &Arc<ClockTelemetry>,
-    chonk_url: &str,
+    shivvr_url: &str,
 ) -> String {
     let store = db.memory_store();
     let active = store.in_state(ferricula::LifecycleState::Active).len();
@@ -1337,7 +1361,7 @@ fn build_dashboard(
     let reservoir = telemetry.reservoir_bytes.load(Ordering::Relaxed);
 
     // Service checks
-    let chonk_status = check_service(chonk_url, "/health");
+    let shivvr_status = check_service(shivvr_url, "/health");
     let radio_url = std::env::var("RADIO_URL").unwrap_or_default();
     let agent_key_set = std::env::var("AGENT_KEY").is_ok();
 
@@ -1354,10 +1378,10 @@ fn build_dashboard(
     };
 
     // Build setup checklist
-    let chonk_check = if chonk_status {
-        r#"<div class="check ok">Embedding service (chonk)</div>"#
+    let shivvr_check = if shivvr_status {
+        r#"<div class="check ok">Embedding service (shivvr)</div>"#
     } else {
-        r#"<div class="check fail">Embedding service (chonk) &mdash; not reachable</div>"#
+        r#"<div class="check fail">Embedding service (shivvr) &mdash; not reachable</div>"#
     };
     let radio_check = if radio_up {
         r#"<div class="check ok">Entropy source (sdr-random)</div>"#
@@ -1485,7 +1509,7 @@ footer{{margin-top:2rem;color:#44403c;font-size:.65rem}}
 
 <div class="checks">
 <h2>Services</h2>
-{chonk_check}
+{shivvr_check}
 {radio_check}
 {key_check}
 </div>
