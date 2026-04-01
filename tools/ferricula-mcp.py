@@ -91,6 +91,9 @@ CHANNELS = {
     "hearing":  {"alpha": 0.010, "description": "external input"},
     "seeing":   {"alpha": 0.010, "description": "file/visual observation"},
     "thinking": {"alpha": 0.015, "description": "working memory"},
+    "body":     {"alpha": 0.020, "description": "interoception — agent self-monitoring"},
+    "taste":    {"alpha": 0.018, "description": "evaluation — quality judgments from confer"},
+    "smell":    {"alpha": 0.020, "description": "ambient — emerging patterns from SKG"},
 }
 
 

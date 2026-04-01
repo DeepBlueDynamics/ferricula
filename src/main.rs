@@ -1194,7 +1194,7 @@ fn cmd_confer(db: &mut DurableEngine, identity: &IdentityState, body: &str) -> R
     // Create a memory record for this observation
     let obs_id = (ferricula::memory::now_epoch() & 0x7FFFFFFF) as u32;
     let mut obs_tags = std::collections::BTreeMap::new();
-    obs_tags.insert("channel".to_string(), "thinking".to_string());
+    obs_tags.insert("channel".to_string(), "taste".to_string());
     obs_tags.insert("type".to_string(), "confer".to_string());
     obs_tags.insert("text".to_string(), observation.clone());
     obs_tags.insert("score".to_string(), format!("{:.2}", score));
@@ -1202,14 +1202,14 @@ fn cmd_confer(db: &mut DurableEngine, identity: &IdentityState, body: &str) -> R
         obs_tags.insert("flags".to_string(), flags.join(","));
     }
 
-    // Use a zero vector (no semantic search on inner voice observations)
+    // Use a zero vector (no semantic search on taste observations)
     let obs_row = Row {
         id: obs_id,
         tags: obs_tags,
         vector: vec![0.0; 768],
     };
     let mut obs_record = MemoryRecord::new(obs_id);
-    obs_record.decay_alpha = 0.015; // thinking channel — decays faster
+    obs_record.decay_alpha = 0.018; // taste channel — evaluation memory
     obs_record.importance = 0.3;
     let _ = db.remember(obs_row, obs_record);
 
