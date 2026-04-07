@@ -1,4 +1,5 @@
 pub mod archetypes;
+pub mod embed;
 pub mod bb25;
 pub mod casting;
 pub mod clock;

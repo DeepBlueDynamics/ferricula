@@ -189,6 +189,7 @@ pub fn load_or_create(data_dir: &str, entropy: &[u8]) -> (IdentityState, bool) {
         cognitive_heat: 0.0,
         last_heat_update: now,
         transform: None,
+        vector_transform: None,
         private_key: None,
         public_key: None,
     };

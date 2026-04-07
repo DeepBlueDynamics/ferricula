@@ -7,6 +7,7 @@ use anyhow::{Result, anyhow};
 
 /// A lightweight orthogonal transform: permutation + sign flips.
 /// Equivalent to a sparse orthogonal matrix but O(n) not O(n^2).
+#[derive(Debug, Clone)]
 pub struct VectorTransform {
     /// Permutation: position i maps to perm[i]
     pub perm: Vec<usize>,
