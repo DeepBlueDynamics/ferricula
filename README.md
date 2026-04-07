@@ -50,23 +50,62 @@ Three threads: **main** (owns all mutable state), **http** (tiny_http, sends Htt
 
 ## Quick Start
 
+### Prerequisites
+
+- **Rust** 1.85+ (uses 2024 edition). Install via [rustup](https://rustup.rs), then `rustc --version` to verify.
+- **Optional external services** (ferricula boots without them, features degrade gracefully):
+  - `shivvr` on port 8080 — embedding + vec2text inversion. Required for MCP `remember`/`recall` text path and `/inversion/:id`. Raw-vector HTTP endpoints work without it.
+  - `gnosis-radio` on port 9080 — time + entropy source for the clock thread. Without it, dreams only run when invoked manually; identity still casts from local entropy on first startup.
+
+### Build
+
 ```bash
-# Build
 cargo build --release
+```
 
-# Run as HTTP service
-./target/release/ferricula ./data --serve
+Output: `./target/release/ferricula` (`.exe` on Windows).
 
-# Or interactive REPL
+### Test
+
+```bash
+cargo test                  # full suite
+cargo test dream            # dream cycle only
+cargo test casting          # King Wen + yarrow stalk + zodiac
+```
+
+### First run — interactive REPL
+
+```bash
 ./target/release/ferricula ./data
 ```
 
-Create a `.env` file for API key and config:
+First invocation:
+- Creates `./data/` if missing
+- Casts identity and persists to `./data/identity.json` (hexagram, zodiac, archetypes from local entropy)
+- Opens the ferricula REPL — type `help` for commands
+
+### Run as HTTP service
+
+```bash
+./target/release/ferricula ./data --serve           # default port 8765
+./target/release/ferricula ./data --serve 8773      # explicit port
+```
+
+Verify:
+
+```bash
+curl http://localhost:8765/status
+curl http://localhost:8765/identity
+curl http://localhost:8765/clock
+```
+
+### Environment (optional)
 
 ```bash
 cp .env.example .env
-# Edit .env with your AGENT_KEY for LLM-powered query rewriting
 ```
+
+Nothing in `.env` is required to boot — the binary runs with all defaults. `AGENT_KEY` (Anthropic) enables LLM query rewriting in the planner; `SHIVVR_URL` and `RADIO_URL` override the default service endpoints. The binary loads `.env` from cwd or the binary's parent dir.
 
 ### MCP Setup
 
@@ -82,7 +121,7 @@ Add to your `.mcp.json`:
       "env": {
         "FERRICULA_SURFACE": "cognitive",
         "FERRICULA_URL": "http://localhost:8765",
-        "CHONK_URL": "http://localhost:8080"
+        "SHIVVR_URL": "http://localhost:8080"
       }
     }
   }
@@ -100,7 +139,7 @@ Target different characters by name or port:
       "command": "python",
       "args": ["tools/ferricula-mcp.py", "--port", "8780", "--name", "assis"],
       "env": {
-        "CHONK_URL": "https://shivvr.nuts.services"
+        "SHIVVR_URL": "https://shivvr.nuts.services"
       }
     }
   }
@@ -241,7 +280,7 @@ All responses are `application/json` with `Access-Control-Allow-Origin: *`.
 |----------|---------|-------------|
 | `AGENT_KEY` | _(none)_ | Anthropic API key for LLM query rewriting |
 | `FERRICULA_URL` | `http://localhost:8765` | HTTP transport for MCP server |
-| `CHONK_URL` | `http://localhost:8080` | gnosis-chunk for embedding + inversion (HTTPS supported) |
+| `SHIVVR_URL` | `http://localhost:8080` | shivvr embedding + inversion service (HTTPS supported) |
 | `RADIO_URL` | `http://localhost:9080` | gnosis-radio for time + entropy |
 | `CLOCK_TICK_SECS` | `60` | Clock poll interval |
 | `DREAM_THRESHOLD_BYTES` | `16` | Entropy bytes to trigger dream |
