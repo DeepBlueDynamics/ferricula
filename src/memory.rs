@@ -15,6 +15,9 @@ pub const FIDELITY_GATE: f32 = 0.75;
 pub const RECALL_SHRINK: f32 = 0.95;
 /// Neglect growth factor (grows alpha when ignored).
 pub const NEGLECT_GROW: f32 = 1.005;
+/// Keystone halo dampening factor (shrinks alpha on proximity to a keystone).
+/// Weaker than RECALL_SHRINK: proximity is not the same as being recalled.
+pub const HALO_SHRINK: f32 = 0.99;
 
 pub const HEAT_CEILING: f32 = 10.0;
 pub const HEAT_PER_RECALL: f32 = 0.3;
@@ -146,6 +149,19 @@ impl MemoryRecord {
     /// Called during dream for memories not recently recalled.
     pub fn on_neglect(&mut self) {
         self.decay_alpha = (self.decay_alpha * NEGLECT_GROW).min(ALPHA_MAX);
+    }
+
+    /// Called during dream for memories that are direct graph neighbors of a
+    /// keystone. Proximity to something editorially important is itself a weak
+    /// form of attention — the dialectical context of a keystoned quote is
+    /// worth preserving. Shrinks alpha by a smaller factor than on_recall,
+    /// without updating last_recalled or recall_count (this is not a recall).
+    /// Keystones and non-Active records are immune (nothing to protect).
+    pub fn on_halo_touch(&mut self) {
+        if self.keystone || self.state != LifecycleState::Active {
+            return;
+        }
+        self.decay_alpha = (self.decay_alpha * HALO_SHRINK).max(ALPHA_MIN);
     }
 
     /// True if fidelity is at or above the survival gate.

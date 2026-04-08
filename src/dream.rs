@@ -31,6 +31,10 @@ pub struct DreamReport {
     pub forgiven_ids: Vec<u32>,
     /// IDs involved in consolidation groups this cycle.
     pub consolidated_ids: Vec<u32>,
+    /// Count of memories that received a keystone halo touch this cycle.
+    /// These are Active non-keystone neighbors of keystones whose decay_alpha
+    /// was shrunk to preserve dialectical context around keystoned quotes.
+    pub halo_touched: u32,
 }
 
 /// Cosine similarity threshold for consolidation grouping.
@@ -82,6 +86,44 @@ pub fn dream_cycle_with_intensity(
         .into_iter()
         .map(|r| r.id)
         .collect();
+
+    // Phase 0: Keystone halo — protect the dialectical context of keystones.
+    //
+    // A memory that is a direct graph neighbor of a keystone gets a weak
+    // alpha shrink (on_halo_touch). Runs before decay tick so the reduced
+    // alpha takes effect in this cycle's decay pass.
+    //
+    // Rationale: keystoning a single memory (e.g., a famous quote from a
+    // longer passage) preserves the quote but lets its surrounding context
+    // decay. The result is a "sharpened" memory that is literally correct
+    // but meaningfully incomplete — the qualifications and nuance that
+    // gave the quote its original sense are gone. The halo slows the
+    // decay of direct neighbors so the surrounding chunks survive long
+    // enough to be re-encountered when the keystone is recalled.
+    //
+    // Thermodynamically: proximity to something editorially important is
+    // itself a weak form of attention. The memory next to a keystone
+    // matters by association.
+    let halo_set: HashSet<u32> = {
+        let keystone_ids: Vec<u32> = store.keystones().iter().map(|r| r.id).collect();
+        let mut set: HashSet<u32> = HashSet::new();
+        for ks_id in keystone_ids {
+            for neighbor_id in graph.neighbors(ks_id).iter() {
+                if let Some(record) = store.get(neighbor_id) {
+                    if record.state == LifecycleState::Active && !record.keystone {
+                        set.insert(neighbor_id);
+                    }
+                }
+            }
+        }
+        set
+    };
+    for &halo_id in &halo_set {
+        if let Some(record) = store.get_mut(halo_id) {
+            record.on_halo_touch();
+        }
+    }
+    report.halo_touched = halo_set.len() as u32;
 
     // Phase 1: Decay tick — entropy-gated. Only selected memories are ticked.
     let decay_candidates: Vec<u32> = ids
@@ -683,6 +725,137 @@ mod tests {
         let report = dream_cycle_with_intensity(&mut store, &engine, &mut graph, &mut skg, &prime_tree, 0.5, &[], None);
         // ceil(4 * 0.5) = 2 should be decayed
         assert_eq!(report.decayed, 2);
+    }
+
+    /// Fresh-timestamp record so Phase 4 neglect doesn't fire during halo
+    /// tests (NEGLECT_SECONDS is 86400, so stale-at-epoch-0 records always
+    /// trip it). These halo tests want to isolate Phase 0 behavior.
+    fn fresh_record(id: u32) -> MemoryRecord {
+        MemoryRecord::new(id)
+    }
+
+    #[test]
+    fn dream_halo_shrinks_keystone_neighbor_alpha() {
+        let mut engine = Engine::new();
+        let mut store = MemoryStore::new();
+        let mut graph = MemoryGraph::new();
+        let mut skg = SkgState::new();
+        let prime_tree = PrimeTree::new();
+
+        // Keystoned center memory
+        engine.upsert(make_row(1, vec![1.0, 0.0])).unwrap();
+        let mut ks = fresh_record(1);
+        ks.keystone = true;
+        store.insert(ks);
+
+        // Non-keystone neighbor — should receive the halo
+        engine.upsert(make_row(2, vec![0.0, 1.0])).unwrap();
+        store.insert(fresh_record(2));
+
+        // Isolated non-keystone — no halo
+        engine.upsert(make_row(3, vec![0.0, 0.0])).unwrap();
+        store.insert(fresh_record(3));
+
+        graph.connect(1, 2, "adjacent".into(), 1.0, EdgeKind::Semantic);
+
+        let alpha_before_neighbor = store.get(2).unwrap().decay_alpha;
+        let alpha_before_isolated = store.get(3).unwrap().decay_alpha;
+
+        let report = dream_cycle(&mut store, &engine, &mut graph, &mut skg, &prime_tree, None);
+
+        assert_eq!(report.halo_touched, 1, "exactly one neighbor should be halo'd");
+
+        let alpha_after_neighbor = store.get(2).unwrap().decay_alpha;
+        let alpha_after_isolated = store.get(3).unwrap().decay_alpha;
+
+        assert!(
+            alpha_after_neighbor < alpha_before_neighbor,
+            "halo should shrink the neighbor's alpha ({alpha_after_neighbor} >= {alpha_before_neighbor})"
+        );
+        assert_eq!(
+            alpha_after_isolated, alpha_before_isolated,
+            "isolated memory should not be halo'd"
+        );
+        assert!(
+            alpha_after_neighbor < alpha_after_isolated,
+            "halo'd neighbor must end with smaller alpha than isolated control"
+        );
+    }
+
+    #[test]
+    fn dream_halo_skips_keystone_neighbors_that_are_also_keystones() {
+        let mut engine = Engine::new();
+        let mut store = MemoryStore::new();
+        let mut graph = MemoryGraph::new();
+        let mut skg = SkgState::new();
+        let prime_tree = PrimeTree::new();
+
+        // Two keystones, connected
+        engine.upsert(make_row(1, vec![1.0, 0.0])).unwrap();
+        engine.upsert(make_row(2, vec![0.0, 1.0])).unwrap();
+        let mut a = fresh_record(1);
+        a.keystone = true;
+        let mut b = fresh_record(2);
+        b.keystone = true;
+        store.insert(a);
+        store.insert(b);
+
+        graph.connect(1, 2, "adjacent".into(), 1.0, EdgeKind::Semantic);
+
+        let report = dream_cycle(&mut store, &engine, &mut graph, &mut skg, &prime_tree, None);
+
+        // Both ends of the edge are keystones, so neither should be in the halo set.
+        assert_eq!(report.halo_touched, 0);
+    }
+
+    #[test]
+    fn dream_halo_preserves_neighbor_over_many_cycles() {
+        // Verifies the halo is strong enough to keep a neighbor at higher
+        // fidelity than an un-halo'd control over many cycles. Uses fresh
+        // timestamps so neglect doesn't fire and contaminate the measurement.
+        let mut engine_haloed = Engine::new();
+        let mut store_haloed = MemoryStore::new();
+        let mut graph_haloed = MemoryGraph::new();
+        let mut skg_haloed = SkgState::new();
+        let pt = PrimeTree::new();
+
+        engine_haloed.upsert(make_row(1, vec![1.0, 0.0])).unwrap();
+        let mut ks = fresh_record(1);
+        ks.keystone = true;
+        store_haloed.insert(ks);
+
+        engine_haloed.upsert(make_row(2, vec![0.0, 1.0])).unwrap();
+        store_haloed.insert(fresh_record(2));
+        graph_haloed.connect(1, 2, "adjacent".into(), 1.0, EdgeKind::Semantic);
+
+        // Control: same setup but no edge, so no halo.
+        let mut engine_ctrl = Engine::new();
+        let mut store_ctrl = MemoryStore::new();
+        let mut graph_ctrl = MemoryGraph::new();
+        let mut skg_ctrl = SkgState::new();
+
+        engine_ctrl.upsert(make_row(1, vec![1.0, 0.0])).unwrap();
+        let mut ks_ctrl = fresh_record(1);
+        ks_ctrl.keystone = true;
+        store_ctrl.insert(ks_ctrl);
+
+        engine_ctrl.upsert(make_row(2, vec![0.0, 1.0])).unwrap();
+        store_ctrl.insert(fresh_record(2));
+
+        // Run 30 dream cycles — roughly the number of decay ticks 944/946
+        // experienced over ~14 days before they crossed the gate.
+        for _ in 0..30 {
+            dream_cycle(&mut store_haloed, &engine_haloed, &mut graph_haloed, &mut skg_haloed, &pt, None);
+            dream_cycle(&mut store_ctrl, &engine_ctrl, &mut graph_ctrl, &mut skg_ctrl, &pt, None);
+        }
+
+        let haloed_fidelity = store_haloed.get(2).map(|r| r.fidelity).unwrap_or(0.0);
+        let ctrl_fidelity = store_ctrl.get(2).map(|r| r.fidelity).unwrap_or(0.0);
+
+        assert!(
+            haloed_fidelity > ctrl_fidelity,
+            "halo'd neighbor should decay slower than control (haloed={haloed_fidelity}, ctrl={ctrl_fidelity})"
+        );
     }
 
     #[test]
