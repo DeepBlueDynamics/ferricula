@@ -1565,19 +1565,13 @@ footer{{margin-top:2rem;color:#44403c;font-size:.65rem}}
 
 /// Check if a service is reachable (quick TCP probe).
 fn check_service(url: &str, _path: &str) -> bool {
-    use std::net::{TcpStream, ToSocketAddrs};
-    let stripped = url.strip_prefix("http://").unwrap_or(url);
-    let stripped = stripped.strip_prefix("https://").unwrap_or(stripped);
-    let addr = stripped.trim_end_matches('/');
-    TcpStream::connect_timeout(
-        &addr
-            .to_socket_addrs()
-            .ok()
-            .and_then(|mut a| a.next())
-            .unwrap_or_else(|| "127.0.0.1:0".parse().unwrap()),
-        Duration::from_millis(500),
-    )
-    .is_ok()
+    // Routes through inversion::shivvr_available so HTTPS endpoints
+    // (e.g. https://shivvr.nuts.services) get a real TLS handshake against
+    // /health, not just a raw TCP probe of port 443. The previous
+    // implementation parsed `host` as a SocketAddr without a port and
+    // fell back to 127.0.0.1:0, which gave a false-positive locally
+    // and a false-negative for any hostname-only HTTPS URL.
+    ferricula::inversion::shivvr_available(url)
 }
 
 /// Minimal agent config parsed from /data/agent.toml (if present).

@@ -398,7 +398,7 @@ fn extract_ghost_echo(shivvr_url: &str, vector: &[f32]) -> Option<String> {
     // Step 2: Re-embed the extracted text and check fidelity.
     // POST to shivvr /embed to get the round-trip vector.
     let body = serde_json::json!({ "text": extracted }).to_string();
-    let response = inversion_post(shivvr_url, "/embed", &body)?;
+    let response = inversion::http_request(shivvr_url, "POST", "/embed", Some(&body))?;
     let val: serde_json::Value = serde_json::from_str(&response).ok()?;
     let re_embedded: Vec<f32> = val.get("embedding")
         .and_then(|v| v.as_array())
@@ -418,38 +418,6 @@ fn extract_ghost_echo(shivvr_url: &str, vector: &[f32]) -> Option<String> {
     } else {
         None
     }
-}
-
-/// POST helper for shivvr (re-embed during ghost extraction).
-fn inversion_post(base_url: &str, path: &str, body: &str) -> Option<String> {
-    use std::io::{Read, Write};
-    use std::net::TcpStream;
-    use std::time::Duration;
-
-    let stripped = base_url.strip_prefix("http://").unwrap_or(base_url);
-    let (host, port) = if let Some(colon) = stripped.rfind(':') {
-        let h = &stripped[..colon];
-        let p = stripped[colon + 1..].trim_end_matches('/').parse::<u16>().ok()?;
-        (h.to_string(), p)
-    } else {
-        (stripped.trim_end_matches('/').to_string(), 8080u16)
-    };
-
-    let addr = format!("{host}:{port}");
-    let mut stream = TcpStream::connect_timeout(&addr.parse().ok()?, Duration::from_millis(2000)).ok()?;
-    stream.set_read_timeout(Some(Duration::from_millis(5000))).ok()?;
-
-    let request = format!(
-        "POST {path} HTTP/1.0\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    stream.write_all(request.as_bytes()).ok()?;
-    stream.flush().ok()?;
-
-    let mut response = String::new();
-    stream.read_to_string(&mut response).ok()?;
-    let body_start = response.find("\r\n\r\n").map(|i| i + 4)?;
-    Some(response[body_start..].to_string())
 }
 
 /// Phase 3.5: Discover semantic edges between high-fidelity active memories.
