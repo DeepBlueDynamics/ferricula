@@ -61,11 +61,11 @@ impl DurableEngine {
     }
 
     pub fn execute_sql(&self, sql: &str) -> Result<QueryResult> {
-        self.engine.execute_sql(sql)
+        crate::sql::execute_sql_with_embed(&self.engine, Some(&self.memory_store), sql, None)
     }
 
     pub fn execute_sql_with_embed(&self, sql: &str, shivvr_url: Option<&str>) -> Result<QueryResult> {
-        self.engine.execute_sql_with_embed(sql, shivvr_url)
+        crate::sql::execute_sql_with_embed(&self.engine, Some(&self.memory_store), sql, shivvr_url)
     }
 
     // --- Memory record operations ---

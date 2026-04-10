@@ -118,7 +118,7 @@ impl Engine {
     }
 
     pub fn execute_sql_with_embed(&self, sql: &str, shivvr_url: Option<&str>) -> Result<QueryResult> {
-        crate::sql::execute_sql_with_embed(self, sql, shivvr_url)
+        crate::sql::execute_sql_with_embed(self, None, sql, shivvr_url)
     }
 
     pub fn rows_iter(&self) -> impl Iterator<Item = &Row> {
