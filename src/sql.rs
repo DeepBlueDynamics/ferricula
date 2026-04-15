@@ -324,6 +324,26 @@ fn eval_vector_function(
 ) -> Result<RoaringBitmap> {
     let fn_name = function.name.to_string().to_lowercase();
     let args = function_args_as_exprs(&function.args)?;
+
+    // tag_jaccard('field1', 'val1', 'field2', 'val2')
+    // Returns the intersection of the two tag-value bitmaps — rows present in both sets.
+    if fn_name == "tag_jaccard" {
+        if args.len() != 4 {
+            bail!("tag_jaccard expects 4 args: field1, val1, field2, val2");
+        }
+        let field1 = extract_literal_as_string(args[0])?;
+        let val1   = extract_literal_as_string(args[1])?;
+        let field2 = extract_literal_as_string(args[2])?;
+        let val2   = extract_literal_as_string(args[3])?;
+        let a = engine.bitmap_for_tag_eq(&field1, &val1);
+        let b = engine.bitmap_for_tag_eq(&field2, &val2);
+        let result = &a & &b;
+        return Ok(match candidate_filter {
+            Some(f) => &result & f,
+            None => result,
+        });
+    }
+
     if args.len() < 2 {
         bail!("vector function expects at least 2 args: vector_or_embed, k");
     }
@@ -336,7 +356,6 @@ fn eval_vector_function(
     let metric = match fn_name.as_str() {
         "vector_topk_cosine" => DistanceMetric::Cosine,
         "vector_topk_l2" => DistanceMetric::L2,
-        "vector_topk_jaccard" => DistanceMetric::Jaccard,
         _ => bail!("unknown vector function `{fn_name}`"),
     };
     Ok(engine.vector_topk_bitmap(&query, k, metric, candidate_filter))

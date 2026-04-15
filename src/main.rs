@@ -1912,7 +1912,6 @@ fn parse_metric(text: &str) -> Result<DistanceMetric> {
     match text.to_lowercase().as_str() {
         "cosine" => Ok(DistanceMetric::Cosine),
         "l2" => Ok(DistanceMetric::L2),
-        "jaccard" => Ok(DistanceMetric::Jaccard),
         _ => bail!("unknown metric: {text}"),
     }
 }

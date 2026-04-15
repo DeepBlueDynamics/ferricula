@@ -89,7 +89,6 @@ impl Engine {
             let score = match metric {
                 DistanceMetric::Cosine => cosine_similarity(query, &row.vector),
                 DistanceMetric::L2 => -l2_distance(query, &row.vector),
-                DistanceMetric::Jaccard => jaccard_nonzero(query, &row.vector),
             };
             hits.push(VectorHit { id: row.id, score });
         }
@@ -196,24 +195,6 @@ fn l2_distance(left: &[f32], right: &[f32]) -> f32 {
         .sqrt()
 }
 
-fn jaccard_nonzero(left: &[f32], right: &[f32]) -> f32 {
-    let mut intersection = 0_u32;
-    let mut union = 0_u32;
-    for (a, b) in left.iter().zip(right.iter()) {
-        let left_nz = *a != 0.0;
-        let right_nz = *b != 0.0;
-        if left_nz || right_nz {
-            union += 1;
-            if left_nz && right_nz {
-                intersection += 1;
-            }
-        }
-    }
-    if union == 0 {
-        return 1.0;
-    }
-    intersection as f32 / union as f32
-}
 
 #[cfg(test)]
 mod tests {

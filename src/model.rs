@@ -11,7 +11,6 @@ pub struct Row {
 pub enum DistanceMetric {
     Cosine,
     L2,
-    Jaccard,
 }
 
 #[derive(Debug, Clone, PartialEq)]
