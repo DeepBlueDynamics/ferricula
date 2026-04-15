@@ -471,7 +471,12 @@ def _get_repl() -> ReplProcess:
 def _get_shivvr() -> ShivvrClient:
     global _shivvr
     if _shivvr is None:
-        shivvr_url = os.environ.get("SHIVVR_URL", "http://localhost:8080")
+        # SHIVVR_URL takes precedence; CHONK_URL is the legacy alias
+        shivvr_url = (
+            os.environ.get("SHIVVR_URL")
+            or os.environ.get("CHONK_URL")
+            or "http://localhost:8080"
+        )
         _shivvr = ShivvrClient(shivvr_url)
     return _shivvr
 
@@ -659,7 +664,7 @@ def ferricula_remember(
 
     shivvr = _get_shivvr()
     if not shivvr.available():
-        return "error: shivvr (gnosis-chunk) not reachable on localhost:8080"
+        return f"error: shivvr not reachable at {shivvr.base_url}"
 
     profile = CHANNELS[channel]
     vector = shivvr.embed(text)
@@ -788,7 +793,7 @@ def ferricula_observe(path: str, summary: Optional[str] = None, target: Optional
 
     shivvr = _get_shivvr()
     if not shivvr.available():
-        return "error: shivvr (gnosis-chunk) not reachable on localhost:8080"
+        return f"error: shivvr not reachable at {shivvr.base_url}"
 
     text = summary if summary else Path(path).name
     mid = _get_ids().next()
@@ -830,7 +835,7 @@ def ferricula_reflect(thought: str, importance: float = 0.0, target: Optional[st
 
     shivvr = _get_shivvr()
     if not shivvr.available():
-        return "error: shivvr (gnosis-chunk) not reachable on localhost:8080"
+        return f"error: shivvr not reachable at {shivvr.base_url}"
 
     mid = _get_ids().next()
     vector = shivvr.embed(thought)
