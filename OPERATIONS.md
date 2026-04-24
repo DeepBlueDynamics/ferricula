@@ -2,7 +2,7 @@
 
 ## Registry
 
-Docker Hub: `kord/ferricula`
+Docker Hub: `deepbluedynamics/ferricula`
 
 ## Release Checklist
 
@@ -51,10 +51,10 @@ Project: `gnosis-459403`, Region: `us-central1`, Service: `ferricula-site`
 
 ```bash
 # Default port 8765
-docker run -p 8765:8765 -v ferricula-data:/data kord/ferricula
+docker run -p 8765:8765 -v ferricula-data:/data deepbluedynamics/ferricula
 
 # Custom port
-docker run -p 8764:8764 -e PORT=8764 -v my-data:/data kord/ferricula
+docker run -p 8764:8764 -e PORT=8764 -v my-data:/data deepbluedynamics/ferricula
 ```
 
 ## Environment Variables
@@ -74,7 +74,7 @@ All state lives in `/data` inside the container. Mount a named volume to persist
 
 ```bash
 docker volume create ferricula-data
-docker run -p 8765:8765 -v ferricula-data:/data kord/ferricula
+docker run -p 8765:8765 -v ferricula-data:/data deepbluedynamics/ferricula
 ```
 
 ## Build from Source

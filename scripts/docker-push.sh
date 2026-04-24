@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Build and push ferricula to Docker Hub: kord/ferricula
+# Build and push ferricula to Docker Hub: deepbluedynamics/ferricula
 # Usage: ./scripts/docker-push.sh [tag]
 #   tag defaults to the current git SHA (short)
 #   Pass "latest" to also tag/push latest
 
 set -euo pipefail
 
-IMAGE="kord/ferricula"
+IMAGE="deepbluedynamics/ferricula"
 SHA=$(git rev-parse --short HEAD)
 TAG="${1:-$SHA}"
 
