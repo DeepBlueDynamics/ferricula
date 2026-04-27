@@ -36,6 +36,8 @@ pub enum ResonanceGate {
     Temporal,
     /// Vajrayakṣa (North) — agent has capacity to absorb (heat check).
     AgentCapacity,
+    /// Kuṇḍali (South) — blocks recall when cognitive load is at ceiling.
+    Craft,
 }
 
 pub fn now_epoch() -> u64 {
@@ -227,6 +229,11 @@ impl MemoryRecord {
                 ResonanceGate::AgentCapacity => {
                     if agent_heat > HEAT_CEILING {
                         return false;
+                    }
+                }
+                ResonanceGate::Craft => {
+                    if agent_heat >= HEAT_CEILING {
+                        return false; // critical load — Craft gates all recall
                     }
                 }
             }

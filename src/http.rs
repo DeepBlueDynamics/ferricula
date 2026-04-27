@@ -107,6 +107,13 @@ pub enum HttpCommand {
     LastDream {
         reply: mpsc::SyncSender<String>,
     },
+    Tools {
+        reply: mpsc::SyncSender<String>,
+    },
+    Query {
+        body: String,
+        reply: mpsc::SyncSender<String>,
+    },
 }
 
 /// Spawn the HTTP server thread.
@@ -140,6 +147,7 @@ pub fn spawn_http(
 
                 let method = request.method().to_string();
                 let url = request.url().to_string();
+                let t0 = std::time::Instant::now();
 
                 // Read body for POST requests
                 let mut body = String::new();
@@ -151,10 +159,18 @@ pub fn spawn_http(
                 // Parse route and build command
                 let (status, response_body) = match dispatch(&method, &url, body, &http_tx) {
                     Ok(json) => (200, json),
-                    Err(msg) => (400, format!("{{\"error\":\"{}\"}}", escape_json(&msg))),
+                    Err(msg) => {
+                        let elapsed = t0.elapsed().as_millis();
+                        eprintln!("[http] ERR {method} {url} → {msg} ({elapsed}ms)");
+                        (400, format!("{{\"error\":\"{}\"}}", escape_json(&msg)))
+                    }
                 };
+                let elapsed = t0.elapsed().as_millis();
+                if elapsed > 1000 || status != 200 {
+                    eprintln!("[http] {status} {method} {url} ({elapsed}ms)");
+                }
 
-                let content_type = if url == "/" {
+                let content_type = if url == "/" || url.starts_with("/diagnostic") {
                     &b"text/html; charset=utf-8"[..]
                 } else {
                     &b"application/json"[..]
@@ -201,6 +217,9 @@ fn dispatch(
         ("GET", [""]) => {
             let (reply_tx, reply_rx) = mpsc::sync_channel(1);
             HttpCommand::Dashboard { reply: reply_tx }.send_and_recv(http_tx, reply_rx)?
+        }
+        ("GET", ["diagnostic"]) => {
+            include_str!("diagnostic.html").to_string()
         }
         ("POST", ["remember"]) => {
             let (reply_tx, reply_rx) = mpsc::sync_channel(1);
@@ -384,6 +403,18 @@ fn dispatch(
             let (reply_tx, reply_rx) = mpsc::sync_channel(1);
             HttpCommand::LastDream { reply: reply_tx }.send_and_recv(http_tx, reply_rx)?
         }
+        ("GET", ["tools"]) => {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            HttpCommand::Tools { reply: reply_tx }.send_and_recv(http_tx, reply_rx)?
+        }
+        ("POST", ["query"]) => {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            HttpCommand::Query {
+                body,
+                reply: reply_tx,
+            }
+            .send_and_recv(http_tx, reply_rx)?
+        }
         _ => return Err(format!("unknown route: {method} {url}")),
     };
 
@@ -401,9 +432,10 @@ impl HttpCommand {
             .send(self)
             .map_err(|_| "main thread disconnected".to_string())?;
 
-        reply_rx
-            .recv_timeout(Duration::from_secs(10))
-            .map_err(|_| "request timed out".to_string())
+        reply_rx.recv_timeout(Duration::from_secs(10)).map_err(|e| {
+            eprintln!("[http] TIMEOUT waiting for main thread: {e}");
+            "request timed out".to_string()
+        })
     }
 }
 

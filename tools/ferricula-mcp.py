@@ -105,14 +105,20 @@ class HttpClient:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
 
-    def send(self, endpoint: str, method: str = "GET", body: Optional[str] = None) -> str:
+    def send(
+        self,
+        endpoint: str,
+        method: str = "GET",
+        body: Optional[str] = None,
+        content_type: str = "application/json",
+    ) -> str:
         """Send request to ferricula HTTP service, return response body."""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         data = body.encode("utf-8") if body else None
         req = urllib.request.Request(
             url,
             data=data,
-            headers={"Content-Type": "application/json"} if data else {},
+            headers={"Content-Type": content_type} if data else {},
             method=method,
         )
         try:
@@ -128,6 +134,9 @@ class HttpClient:
 
     def post(self, endpoint: str, body: str = "{}") -> str:
         return self.send(endpoint, "POST", body)
+
+    def post_raw(self, endpoint: str, body: str = "") -> str:
+        return self.send(endpoint, "POST", body, content_type="text/plain")
 
     def available(self) -> bool:
         try:
@@ -163,10 +172,7 @@ class ShivvrClient:
 
     def embed(self, text: str) -> list[float]:
         """Embed text via shivvr, return dense vector."""
-        result = self._post("/memory/_mcp/ingest", {"text": text})
-        # Top-level embedding or nested in chunks[0]
-        if "embedding" in result:
-            return result["embedding"]
+        result = self._post("/temp/ferricula/ingest", {"text": text})
         return result["chunks"][0]["embedding"]
 
     def invert(self, vector: list[float]) -> str:
@@ -471,10 +477,8 @@ def _get_repl() -> ReplProcess:
 def _get_shivvr() -> ShivvrClient:
     global _shivvr
     if _shivvr is None:
-        # SHIVVR_URL takes precedence; CHONK_URL is the legacy alias
         shivvr_url = (
             os.environ.get("SHIVVR_URL")
-            or os.environ.get("CHONK_URL")
             or "http://localhost:8080"
         )
         _shivvr = ShivvrClient(shivvr_url)
@@ -1102,7 +1106,7 @@ def ferricula_offer_entropy(source: str = "radio", target: Optional[str] = None)
         hex_str = source.strip()
 
     if _use_http(target):
-        return _get_http(target).post("offer", json.dumps({"entropy": hex_str}))
+        return _get_http(target).post_raw("offer", hex_str)
     result = _get_repl().send(f"offer {hex_str}")
     return result
 
@@ -1112,10 +1116,10 @@ def ferricula_offer_entropy(source: str = "radio", target: Optional[str] = None)
 
 @mcp.tool()
 def ferricula_embody(target: Optional[str] = None, memories: int = 12) -> str:
-    """Embody a ferricula character — load identity, core memories, and mental state.
+    """Embody a ferricula character — load identity and available mental state.
 
     Returns everything an LLM needs to inhabit this character: identity,
-    keystone memories, recent dream imagery, and emerging conceptual links.
+    current state, and any available memory/dream context.
     Use this at the start of a conversation to become the character.
 
     Args:
@@ -1175,44 +1179,21 @@ def ferricula_embody(target: Optional[str] = None, memories: int = 12) -> str:
     except Exception:
         pass
 
-    # ── Core memories via BM25 search ──
+    # ── Core memories ──
+    # /search is not available on ferricula HTTP instances; leave this section empty.
     try:
-        # Search for identity-defining memories using the character's name
-        raw = http.post("search", json.dumps({"query": name}))
-        search_data = json.loads(raw)
-        results = search_data.get("results", [])
-
-        mem_lines = []
-        for hit in results[:memories]:
-            text = hit.get("text", "")
-            if text and len(text) >= 10:
-                mem_lines.append(f"- {text}")
-
-        if mem_lines:
-            sections.append("## Core memories\n" + "\n".join(mem_lines))
+        core_memories = ""
+        if core_memories:
+            sections.append(core_memories)
     except Exception:
         pass
 
     # ── Latest dream ──
+    # /dream/latest is not available on ferricula HTTP instances; leave this section empty.
     try:
-        raw = http.get("dream/latest")
-        data = json.loads(raw)
-        dream_text = data.get("result", "")
-        if dream_text and "no dreams yet" not in dream_text:
-            # Extract SKG emerging terms
-            emerging_m = re.search(r"emerging=\[([^\]]*)\]", dream_text)
-            decaying_m = re.search(r"decaying=\[([^\]]*)\]", dream_text)
-            dream_lines = ["## Recent dream state"]
-            if emerging_m and emerging_m.group(1):
-                pairs = [s.strip().replace("~", " + ") for s in emerging_m.group(1).split(",") if s.strip()]
-                if pairs:
-                    dream_lines.append("Emerging connections: " + ", ".join(pairs[:5]))
-            if decaying_m and decaying_m.group(1):
-                pairs = [s.strip().replace("~", " + ") for s in decaying_m.group(1).split(",") if s.strip()]
-                if pairs:
-                    dream_lines.append("Fading connections: " + ", ".join(pairs[:5]))
-            if len(dream_lines) > 1:
-                sections.append("\n".join(dream_lines))
+        latest_dream = ""
+        if latest_dream:
+            sections.append(latest_dream)
     except Exception:
         pass
 
@@ -1221,7 +1202,11 @@ def ferricula_embody(target: Optional[str] = None, memories: int = 12) -> str:
 
 # ── Multi-Instance Tools ─────────────────────────────────────────────────
 
-SCAN_PORTS = [8765, 8764, 8773, 8774, 8775, 8776, 8780]
+SCAN_PORTS = [
+    8765, 8764, 8773, 8774, 8775, 8776, 8780,
+    8781, 8782,
+    8790, 8791, 8792, 8793, 8794, 8795, 8796, 8797,
+]
 
 
 @mcp.tool()
@@ -1231,7 +1216,7 @@ def ferricula_discover(ports: Optional[str] = None) -> str:
     Calls /identity on each port to discover who's there.
 
     Args:
-        ports: Comma-separated ports to scan (default: 8765,8773-8776,8780).
+        ports: Comma-separated ports to scan (default: SCAN_PORTS).
     """
     if ports:
         scan = [int(p.strip()) for p in ports.split(",") if p.strip().isdigit()]

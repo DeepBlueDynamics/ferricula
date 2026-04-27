@@ -10,6 +10,7 @@ pub mod engine;
 pub mod graph;
 pub mod http;
 pub mod identity;
+pub mod mcp;
 pub mod inversion;
 pub mod memory;
 pub mod model;

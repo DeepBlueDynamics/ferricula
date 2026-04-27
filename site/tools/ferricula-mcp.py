@@ -7,8 +7,8 @@ Supports two transport modes:
   - subprocess (default): spawns ferricula binary, communicates via stdin/stdout
   - HTTP: connects to ferricula HTTP service (--http-url http://localhost:8765)
 
-Vectors are NEVER exposed to the LLM. Text is embedded via chonk
-(gnosis-chunk on :8080), stored internally, and inverted back to
+Vectors are NEVER exposed to the LLM. Text is embedded via shivvr
+(https://shivvr.nuts.services), stored internally, and inverted back to
 text on recall.
 
 Three sensory channels with distinct decay profiles:
@@ -124,13 +124,13 @@ class HttpClient:
             return False
 
 
-# ── ChonkClient ──────────────────────────────────────────────────────────
+# ── ShivvrClient ──────────────────────────────────────────────────────────
 
-class ChonkClient:
-    """HTTP client for gnosis-chunk embedding service on localhost:8080."""
+class ShivvrClient:
+    """HTTP client for shivvr embedding service."""
 
-    def __init__(self, base_url: str = "http://localhost:8080"):
-        self.base_url = base_url
+    def __init__(self, base_url: str = "https://shivvr.nuts.services"):
+        self.base_url = base_url.rstrip("/")
 
     def _post(self, path: str, payload: dict) -> dict:
         url = f"{self.base_url}{path}"
@@ -149,7 +149,7 @@ class ChonkClient:
             return json.loads(resp.read().decode("utf-8"))
 
     def embed(self, text: str) -> list[float]:
-        """Embed text via chonk, return dense vector."""
+        """Embed text via shivvr, return dense vector."""
         result = self._post("/memory/_mcp/ingest", {"text": text})
         # Top-level embedding or nested in chunks[0]
         if "embedding" in result:
@@ -157,16 +157,16 @@ class ChonkClient:
         return result["chunks"][0]["embedding"]
 
     def invert(self, vector: list[float]) -> str:
-        """Invert a vector back to approximate text via chonk."""
+        """Invert a vector back to approximate text via shivvr."""
         result = self._post("/invert", {"embedding": vector})
         return result.get("text", result.get("hypothesis", "[inversion failed]"))
 
     def health(self) -> dict:
-        """Check chonk health."""
+        """Check shivvr health."""
         return self._get("/health")
 
     def available(self) -> bool:
-        """Check if chonk is reachable."""
+        """Check if shivvr is reachable."""
         try:
             self.health()
             return True
@@ -265,8 +265,8 @@ class ReplProcess:
             )
         env = os.environ.copy()
         env["NO_COLOR"] = "1"  # skip TUI splash in subprocess mode
-        # Pass through clock config from MCP env
-        for key in ("RADIO_URL", "CLOCK_TICK_SECS", "DREAM_THRESHOLD_BYTES"):
+        # Pass through clock and shivvr config from MCP env
+        for key in ("RADIO_URL", "CLOCK_TICK_SECS", "DREAM_THRESHOLD_BYTES", "SHIVVR_URL"):
             val = os.environ.get(key)
             if val:
                 env[key] = val
@@ -348,7 +348,7 @@ if not _http_url:
 
 _repl: Optional[ReplProcess] = None
 _http_client: Optional[HttpClient] = None
-_chonk: Optional[ChonkClient] = None
+_shivvr: Optional[ShivvrClient] = None
 _ids: Optional[IdAllocator] = None
 _journal: Optional[SeedJournal] = None
 _restored: bool = False
@@ -375,12 +375,12 @@ def _get_repl() -> ReplProcess:
     return _repl
 
 
-def _get_chonk() -> ChonkClient:
-    global _chonk
-    if _chonk is None:
-        chonk_url = os.environ.get("CHONK_URL", "http://localhost:8080")
-        _chonk = ChonkClient(chonk_url)
-    return _chonk
+def _get_shivvr() -> ShivvrClient:
+    global _shivvr
+    if _shivvr is None:
+        shivvr_url = os.environ.get("SHIVVR_URL", "https://shivvr.nuts.services")
+        _shivvr = ShivvrClient(shivvr_url)
+    return _shivvr
 
 
 def _get_ids() -> IdAllocator:
@@ -467,7 +467,7 @@ def _restore_if_empty():
 
 def _invert_recall_results(raw: str) -> str:
     """Parse recall output, invert vectors for each hit, return enriched text."""
-    chonk = _get_chonk()
+    shivvr = _get_shivvr()
     repl = _get_repl()
 
     # Extract IDs from recall output: "  id=N fidelity=..."
@@ -486,7 +486,7 @@ def _invert_recall_results(raw: str) -> str:
         row_resp = repl.send(f"get {mid}")
         inspect_resp = repl.send(f"inspect {mid}")
 
-        # Try to invert the vector
+        # Try to get text from tag
         inverted = None
         try:
             row_data = json.loads(row_resp)
@@ -555,12 +555,12 @@ def ferricula_remember(
     if channel not in CHANNELS:
         return f"error: unknown channel '{channel}'. Use: {', '.join(CHANNELS)}"
 
-    chonk = _get_chonk()
-    if not chonk.available():
-        return "error: chonk (gnosis-chunk) not reachable on localhost:8080"
+    shivvr = _get_shivvr()
+    if not shivvr.available():
+        return f"error: shivvr not reachable at {shivvr.base_url}"
 
     profile = CHANNELS[channel]
-    vector = chonk.embed(text)
+    vector = shivvr.embed(text)
 
     if _use_http():
         http = _get_http()
@@ -623,11 +623,11 @@ def ferricula_recall(query: str) -> str:
 
     if _use_http():
         http = _get_http()
-        chonk = _get_chonk()
+        shivvr = _get_shivvr()
         # Embed query and build vector SQL so Rust gets executable SQL, not freeform text
-        if chonk.available() and not query.strip().upper().startswith("SELECT"):
+        if shivvr.available() and not query.strip().upper().startswith("SELECT"):
             try:
-                qvec = chonk.embed(query)
+                qvec = shivvr.embed(query)
                 vec_str = "[" + ",".join(str(v) for v in qvec) + "]"
                 sql = f"SELECT id FROM docs WHERE vector_topk_cosine('{vec_str}', 10)"
                 return http.post("recall", json.dumps({"query": sql}))
@@ -635,12 +635,12 @@ def ferricula_recall(query: str) -> str:
                 pass  # fall through to raw query
         return http.post("recall", json.dumps({"query": query}))
 
-    chonk = _get_chonk()
+    shivvr = _get_shivvr()
 
-    # If chonk is available, embed the query and do vector search
-    if chonk.available():
+    # If shivvr is available, embed the query and do vector search
+    if shivvr.available():
         try:
-            qvec = chonk.embed(query)
+            qvec = shivvr.embed(query)
             vec_str = "[" + ",".join(str(v) for v in qvec) + "]"
             raw = _get_repl().send(
                 f"query SELECT id FROM docs WHERE vector_topk_cosine('{vec_str}', 10)"
@@ -743,13 +743,13 @@ def ferricula_observe(path: str, summary: Optional[str] = None) -> str:
     """
     _restore_if_empty()
 
-    chonk = _get_chonk()
-    if not chonk.available():
-        return "error: chonk (gnosis-chunk) not reachable on localhost:8080"
+    shivvr = _get_shivvr()
+    if not shivvr.available():
+        return f"error: shivvr not reachable at {shivvr.base_url}"
 
     text = summary if summary else Path(path).name
     mid = _get_ids().next()
-    vector = chonk.embed(text)
+    vector = shivvr.embed(text)
 
     profile = CHANNELS["seeing"]
     row = {
@@ -784,12 +784,12 @@ def ferricula_reflect(thought: str, importance: float = 0.0) -> str:
     """
     _restore_if_empty()
 
-    chonk = _get_chonk()
-    if not chonk.available():
-        return "error: chonk (gnosis-chunk) not reachable on localhost:8080"
+    shivvr = _get_shivvr()
+    if not shivvr.available():
+        return f"error: shivvr not reachable at {shivvr.base_url}"
 
     mid = _get_ids().next()
-    vector = chonk.embed(thought)
+    vector = shivvr.embed(thought)
 
     profile = CHANNELS["thinking"]
     row = {
@@ -812,7 +812,7 @@ def ferricula_reflect(thought: str, importance: float = 0.0) -> str:
 
 @_tool("health")
 def ferricula_health() -> str:
-    """Check health of ferricula and chonk (embedding service).
+    """Check health of ferricula and shivvr (embedding service).
 
     Returns status of both components.
     """
@@ -829,13 +829,13 @@ def ferricula_health() -> str:
     except Exception as e:
         parts.append(f"ferricula: error ({e})")
 
-    # Check chonk
+    # Check shivvr
     try:
-        chonk = _get_chonk()
-        health = chonk.health()
-        parts.append(f"chonk: ok\n  {json.dumps(health)}")
+        shivvr = _get_shivvr()
+        health = shivvr.health()
+        parts.append(f"shivvr: ok\n  {json.dumps(health)}")
     except Exception as e:
-        parts.append(f"chonk: unreachable ({e})")
+        parts.append(f"shivvr: unreachable ({e})")
 
     return "\n".join(parts)
 
@@ -848,8 +848,8 @@ def ferricula_dream() -> str:
     """Run a dream cycle: decay, forgive, consolidate, neglect, review, prune.
 
     Dying memories with neighbors get a ghost echo: their vector is inverted
-    to text via vec2text, re-embedded, and if fidelity >= 0.5 the echo is
-    saved as labeled edges on surviving neighbors (requires chonk).
+    to text via shivvr, re-embedded, and if fidelity >= 0.5 the echo is
+    saved as labeled edges on surviving neighbors.
 
     Returns a report of how many memories were affected in each phase.
     """
@@ -965,11 +965,11 @@ def ferricula_identity() -> str:
 def ferricula_inversion_check(id: int) -> str:
     """Check semantic fidelity of a memory via vec2text inversion.
 
-    Inverts the memory's vector back to approximate text via chonk,
+    Inverts the memory's vector back to approximate text via shivvr,
     then compares with the original text tag using Jaccard similarity.
     Returns: original text, inverted text, quality score (0.0..1.0).
 
-    Requires chonk (gnosis-chunk) to be running.
+    Requires shivvr to be running.
 
     Args:
         id: Memory ID to check.

@@ -156,6 +156,29 @@ fn clock_loop(config: ClockConfig, tx: mpsc::Sender<ClockEvent>, telemetry: Arc<
     let mut reservoir = EntropyReservoir::new(1024);
     let mut was_available = false;
 
+    // Startup probe — set radio_available immediately without waiting for first tick sleep
+    let (_, startup_entropy, startup_available) =
+        fetch_time_and_entropy(&config.radio_host, config.radio_port);
+    telemetry
+        .radio_available
+        .store(startup_available, Ordering::Relaxed);
+    was_available = startup_available;
+    if startup_available {
+        if !startup_entropy.is_empty() {
+            telemetry
+                .entropy_lifetime
+                .fetch_add(startup_entropy.len() as u64, Ordering::Relaxed);
+            reservoir.deposit(&startup_entropy);
+            telemetry
+                .reservoir_bytes
+                .store(reservoir.len() as u32, Ordering::Relaxed);
+        }
+        let _ = tx.send(ClockEvent::RadioStatus {
+            available: true,
+            message: "radio entropy source connected".to_string(),
+        });
+    }
+
     loop {
         // Entropy-varied tick: ±30% jitter seeded from reservoir (or system entropy)
         let jitter_byte = if reservoir.len() > 0 {

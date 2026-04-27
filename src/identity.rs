@@ -111,7 +111,7 @@ impl IdentityState {
                 ArchetypeRole::Ethics    => gates.push(ResonanceGate::Lifecycle),
                 ArchetypeRole::Intuition => gates.push(ResonanceGate::Temporal),
                 ArchetypeRole::Fortune   => gates.push(ResonanceGate::AgentCapacity),
-                ArchetypeRole::Craft     => {} // Kuṇḍali — Phase 2
+                ArchetypeRole::Craft     => gates.push(ResonanceGate::Craft),
             }
         }
         gates

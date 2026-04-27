@@ -115,8 +115,9 @@ fn main() -> Result<()> {
     let planner = Planner::new(agent_key);
 
     // Load or create identity
-    let shivvr_url =
-        std::env::var("SHIVVR_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let shivvr_url = std::env::var("SHIVVR_URL")
+        .or_else(|_| std::env::var("CHONK_URL"))
+        .unwrap_or_else(|_| "http://localhost:8080".to_string());
     let identity_entropy = get_identity_entropy();
     let (mut identity, is_new) = ferricula::identity::load_or_create(&data_dir, &identity_entropy);
     if is_new {
@@ -154,6 +155,20 @@ fn main() -> Result<()> {
         let http_flag_clone = Arc::clone(&http_flag);
 
         let _http_handle = ferricula::http::spawn_http(serve_port, http_tx, http_flag.clone());
+
+        // Spawn MCP server (PORT+1 or MCP_PORT env var)
+        let mcp_port = std::env::var("MCP_PORT")
+            .ok()
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or(serve_port + 1);
+        let mcp_shivvr = shivvr_url.clone();
+        let mcp_radio = std::env::var("RADIO_URL").unwrap_or_else(|_| "http://localhost:9080".to_string());
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("[mcp] tokio runtime");
+            rt.block_on(ferricula::mcp::run_mcp_server(serve_port, mcp_port, mcp_shivvr, mcp_radio))
+                .unwrap_or_else(|e| eprintln!("[mcp] server error: {e}"));
+        });
+        eprintln!("[mcp] MCP endpoint -> http://localhost:{mcp_port}/mcp");
 
         let mut pending_recalls: Vec<PendingRecall> = Vec::new();
         let mut last_dream_report = String::new();
@@ -537,6 +552,14 @@ fn process_http_commands(
                 } else {
                     let _ = reply.send(json_wrap("result", last_dream_report));
                 }
+            }
+            HttpCommand::Tools { reply } => {
+                let result = cmd_tools(identity).unwrap_or_else(|e| json_error(&e));
+                let _ = reply.send(result);
+            }
+            HttpCommand::Query { body, reply } => {
+                let result = cmd_query_sql(db, &body).unwrap_or_else(|e| json_error(&e));
+                let _ = reply.send(result);
             }
         }
     }
@@ -950,6 +973,105 @@ fn cmd_recall_sql_embed(db: &mut DurableEngine, identity: &mut IdentityState, sq
         result.ids.len(),
         lines.join("\n")
     ))
+}
+
+/// Read-only SQL query — no heat, no on_recall(), no resonance filtering.
+/// Used by diagnostic and any observer that must not disturb agent state.
+fn cmd_query_sql(db: &DurableEngine, sql: &str) -> Result<String> {
+    let result = db.execute_sql_with_embed(sql, None)?;
+
+    // Extract ORDER BY and LIMIT from SQL text — the engine returns a bitmap
+    // (unordered, uncapped), so we post-process here.
+    let sql_upper = sql.to_uppercase();
+
+    // LIMIT N
+    let limit: Option<usize> = {
+        let re = regex_limit(&sql_upper);
+        re.and_then(|n| n.parse().ok())
+    };
+
+    // ORDER BY <col> [DESC|ASC]
+    let (order_col, order_desc) = parse_order_by(&sql_upper);
+
+    // Build rows from IDs
+    let mut rows: Vec<serde_json::Value> = result
+        .ids
+        .iter()
+        .filter_map(|&id| {
+            let record = db.memory_store().get(id)?;
+            let text = db
+                .engine()
+                .get(id)
+                .and_then(|r| r.tags.get("text").cloned())
+                .unwrap_or_default();
+            let end = {
+                let mut e = text.len().min(200);
+                while e > 0 && !text.is_char_boundary(e) { e -= 1; }
+                e
+            };
+            Some(serde_json::json!({
+                "id": id,
+                "fidelity": (record.fidelity * 1000.0).round() / 1000.0,
+                "recalls": record.recall_count,
+                "state": format!("{:?}", record.state),
+                "keystone": record.keystone,
+                "text": &text[..end],
+            }))
+        })
+        .collect();
+
+    // Apply ORDER BY
+    match order_col.as_deref() {
+        Some("RECALLS") => rows.sort_by(|a, b| {
+            let av = a["recalls"].as_u64().unwrap_or(0);
+            let bv = b["recalls"].as_u64().unwrap_or(0);
+            if order_desc { bv.cmp(&av) } else { av.cmp(&bv) }
+        }),
+        Some("FIDELITY") => rows.sort_by(|a, b| {
+            let av = a["fidelity"].as_f64().unwrap_or(0.0);
+            let bv = b["fidelity"].as_f64().unwrap_or(0.0);
+            if order_desc { bv.partial_cmp(&av) } else { av.partial_cmp(&bv) }
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        Some("ID") => rows.sort_by(|a, b| {
+            let av = a["id"].as_u64().unwrap_or(0);
+            let bv = b["id"].as_u64().unwrap_or(0);
+            if order_desc { bv.cmp(&av) } else { av.cmp(&bv) }
+        }),
+        _ => {}
+    }
+
+    // Apply LIMIT
+    if let Some(n) = limit {
+        rows.truncate(n);
+    }
+
+    Ok(serde_json::json!({ "rows": rows }).to_string())
+}
+
+/// Extract LIMIT N from uppercased SQL (returns the numeric string).
+fn regex_limit(sql_upper: &str) -> Option<&str> {
+    let pos = sql_upper.find("LIMIT ")?;
+    let rest = sql_upper[pos + 6..].trim_start();
+    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    if end == 0 { None } else { Some(&rest[..end]) }
+}
+
+/// Extract (column_name_upper, is_desc) from uppercased SQL ORDER BY clause.
+fn parse_order_by(sql_upper: &str) -> (Option<String>, bool) {
+    let pos = match sql_upper.find("ORDER BY ") {
+        Some(p) => p + 9,
+        None => return (None, false),
+    };
+    let rest = sql_upper[pos..].trim_start();
+    let end = rest.find(|c: char| c == ',' || c == '\n' || c == '\r')
+        .unwrap_or(rest.len());
+    let clause = rest[..end].trim();
+    // clause is like "RECALLS DESC" or "FIDELITY ASC" or "ID"
+    let parts: Vec<&str> = clause.split_whitespace().collect();
+    let col = parts.first().map(|s| s.to_string());
+    let desc = parts.get(1).map(|s| *s == "DESC").unwrap_or(true); // default DESC
+    (col, desc)
 }
 
 fn cmd_dream(db: &mut DurableEngine, identity: &mut IdentityState, shivvr_url: &str) -> Result<String> {
@@ -1657,6 +1779,45 @@ fn cmd_status(db: &DurableEngine, identity: &IdentityState) -> Result<String> {
         db.prime_tree().node_count(),
         db.prime_tree().total_members(),
     ))
+}
+
+fn cmd_tools(identity: &IdentityState) -> Result<String> {
+    let heat = identity.cognitive_heat;
+
+    let all_tools = vec![
+        "memory_recall", "memory_search", "memory_remember", "memory_inspect",
+        "memory_get", "memory_neighbors", "memory_connect", "memory_disconnect",
+        "memory_keystone", "memory_delete", "memory_dream", "memory_status",
+        "ui_command",
+    ];
+
+    let (tier, suppressed): (&str, Vec<&str>) = if heat >= 10.0 {
+        ("CRITICAL", all_tools.clone())
+    } else if heat >= 7.0 {
+        ("HIGH", vec!["memory_dream", "memory_connect", "memory_disconnect",
+                      "memory_keystone", "memory_delete"])
+    } else if heat >= 4.0 {
+        ("ELEVATED", vec!["memory_dream", "memory_connect",
+                          "memory_disconnect", "memory_keystone"])
+    } else {
+        ("NOMINAL", vec![])
+    };
+
+    let active: Vec<&str> = all_tools.iter()
+        .filter(|t| !suppressed.contains(t))
+        .copied()
+        .collect();
+
+    let escalate = heat >= 10.0;
+
+    Ok(serde_json::json!({
+        "tier": tier,
+        "heat": heat,
+        "escalate": escalate,
+        "active_tools": active,
+        "suppressed": suppressed,
+        "reason": format!("heat={:.2}", heat),
+    }).to_string())
 }
 
 fn cmd_inspect(db: &DurableEngine, tail: &str) -> Result<String> {
