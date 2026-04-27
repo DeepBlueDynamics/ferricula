@@ -50,11 +50,14 @@ Project: `gnosis-459403`, Region: `us-central1`, Service: `ferricula-site`
 ## Run (self-hosted)
 
 ```bash
-# Default port 8765
-docker run -p 8765:8765 -v ferricula-data:/data deepbluedynamics/ferricula
+# Default port 8765 (REST) + 8766 (MCP)
+docker run -p 8765:8765 -p 8766:8766 -v ferricula-data:/data deepbluedynamics/ferricula
 
-# Custom port
-docker run -p 8764:8764 -e PORT=8764 -v my-data:/data deepbluedynamics/ferricula
+# Custom port — use PORT env var (not trailing args)
+docker run -p 8773:8773 -p 8874:8774 -e PORT=8773 -v my-data:/data deepbluedynamics/ferricula
+
+# Connect Claude Code to the MCP endpoint:
+#   claude mcp add ferricula --sse http://localhost:8766/mcp
 ```
 
 ## Environment Variables

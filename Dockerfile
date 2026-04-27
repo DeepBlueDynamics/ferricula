@@ -1,8 +1,8 @@
 # ============================================================
 # ferricula — thermodynamic memory engine
 # Build: docker build -t ferricula .
-# Run:   docker run -p 8765:8765 -v ferricula-data:/data ferricula
-# Multi: docker run -p 8764:8764 -e PORT=8764 -v my-data:/data ferricula
+# Run:   docker run -p 8765:8765 -p 8766:8766 -v ferricula-data:/data ferricula
+# Multi: docker run -p 8773:8773 -p 8874:8774 -e PORT=8773 -v my-data:/data ferricula
 # ============================================================
 
 FROM rust:1.88-bookworm AS builder
@@ -27,7 +27,8 @@ COPY --from=builder /build/target/release/ferricula /usr/local/bin/ferricula
 VOLUME ["/data"]
 
 # Port is configurable via PORT env var (default 8765)
+# MCP server starts automatically on PORT+1 (or MCP_PORT env var)
 ENV PORT=8765
 
-# Default: run in serve mode with /data as storage
-CMD ferricula /data --serve $PORT
+ENTRYPOINT ["ferricula"]
+CMD ["/data", "--serve", "8765"]
