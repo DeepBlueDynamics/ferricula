@@ -1,0 +1,1776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DELOS · Diagnostics</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+:root {
+  --bg-body: #07080d;
+  --bg-panel: #0d0f17;
+  --cyan: #00e5ff;
+  --amber: #ffab40;
+  --keystone-white: #f0f4ff;
+  --archived-dim: #2a3040;
+  --text-dim: #4a5568;
+  --text-mid: #8899aa;
+  --text-bright: #ccd6e0;
+  --emerging: #00ff88;
+  --decaying: #ff4040;
+  --fear: #5533ff;
+  --sadness: #667799;
+  --joy: #ffdd00;
+  --anger: #ff4422;
+  --boredom: #445566;
+  --trust: #22cc88;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg-body);
+  color: var(--text-bright);
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 12px;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* Scan lines over entire UI */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px, transparent 2px,
+    rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px
+  );
+  pointer-events: none; z-index: 9998;
+}
+
+#grid {
+  display: grid;
+  grid-template-rows: 44px 1fr 180px;
+  grid-template-columns: 280px 1fr 300px;
+  height: 100vh;
+  width: 100vw;
+  gap: 1px;
+}
+
+/* TOPBAR */
+#topbar {
+  grid-column: 1 / -1;
+  background: var(--bg-panel);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid #1a1d2a;
+  gap: 16px;
+}
+#topbar .logo { color: var(--cyan); font-size: 15px; font-weight: 700; letter-spacing: 0.35em; flex-shrink: 0; }
+#topbar .breadcrumb { display: flex; align-items: center; gap: 4px; font-size: 10px; }
+#topbar .breadcrumb .crumb { color: var(--text-dim); letter-spacing: 0.1em; }
+#topbar .breadcrumb .crumb.active { color: var(--text-mid); }
+#topbar .breadcrumb .slash { color: #1a2535; }
+#topbar .sep { color: var(--text-dim); }
+#topbar .agent-name { color: var(--text-bright); font-size: 13px; }
+#topbar .agent-id { color: var(--text-dim); font-size: 10px; }
+#topbar .radio-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+#topbar .radio-label { color: var(--text-dim); font-size: 10px; }
+#topbar .version { color: var(--text-dim); font-size: 10px; margin-left: auto; }
+#topbar .capture-btn {
+  background: none; border: 1px solid #1a1d2a; color: var(--text-dim);
+  font-family: inherit; font-size: 9px; padding: 3px 10px; cursor: pointer;
+  border-radius: 3px; text-transform: uppercase; letter-spacing: 0.1em;
+  transition: all 0.15s; margin-left: 8px;
+}
+#topbar .capture-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+#topbar .capture-btn.capturing { color: var(--amber); border-color: var(--amber); pointer-events: none; }
+#capture-flash {
+  position: fixed; inset: 0; background: rgba(255,255,255,0.08);
+  z-index: 9999; pointer-events: none; opacity: 0; transition: opacity 0.15s;
+}
+#capture-flash.flash { opacity: 1; }
+#topbar .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--decaying); margin-left: 8px; }
+#topbar .ai-btn {
+  background: none; border: 1px solid #1a1d2a; color: var(--text-dim);
+  font-family: inherit; font-size: 9px; padding: 3px 10px; cursor: pointer;
+  border-radius: 3px; text-transform: uppercase; letter-spacing: 0.1em;
+  transition: all 0.15s; margin-left: 4px;
+}
+#topbar .ai-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+#topbar .ai-btn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,229,255,0.08); }
+
+/* AI CHAT DRAWER */
+#chat-drawer {
+  position: fixed; top: 44px; right: 0; bottom: 0; width: 360px;
+  background: var(--bg-panel); border-left: 1px solid #1a1d2a;
+  display: flex; flex-direction: column; z-index: 100;
+  transform: translateX(100%); transition: transform 0.2s ease;
+}
+#chat-drawer.open { transform: translateX(0); }
+#chat-messages {
+  flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px;
+}
+.chat-msg { padding: 8px 10px; border-radius: 6px; font-size: 11px; line-height: 1.5; max-width: 90%; word-wrap: break-word; white-space: pre-wrap; }
+.chat-msg.user { background: rgba(0,229,255,0.1); color: var(--cyan); align-self: flex-end; border: 1px solid rgba(0,229,255,0.15); }
+.chat-msg.ai { background: rgba(255,255,255,0.04); color: var(--text-bright); align-self: flex-start; border: 1px solid #1a1d2a; }
+.chat-msg.thinking { color: var(--text-dim); font-style: italic; }
+#chat-input-row {
+  display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid #1a1d2a;
+}
+#chat-input {
+  flex: 1; background: var(--bg-body); border: 1px solid #1a1d2a; border-radius: 4px;
+  color: var(--text-bright); font-family: inherit; font-size: 11px; padding: 8px 10px;
+  outline: none; resize: none;
+}
+#chat-input:focus { border-color: var(--cyan); }
+#chat-send {
+  background: rgba(0,229,255,0.1); border: 1px solid rgba(0,229,255,0.2);
+  color: var(--cyan); font-family: inherit; font-size: 10px; padding: 0 14px;
+  cursor: pointer; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em;
+}
+#chat-send:hover { background: rgba(0,229,255,0.2); }
+#chat-send:disabled { opacity: 0.3; cursor: default; }
+#topbar .conn-dot.ok { background: var(--emerging); }
+
+/* PANELS */
+.panel {
+  background: var(--bg-panel);
+  padding: 12px;
+  overflow-y: auto;
+  border-right: 1px solid #1a1d2a;
+}
+.panel::-webkit-scrollbar { width: 4px; }
+.panel::-webkit-scrollbar-thumb { background: #1a1d2a; border-radius: 2px; }
+
+.panel-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+/* LEFT PANEL - IDENTITY */
+#identity { grid-row: 2; grid-column: 1; }
+
+.hex-container { display: flex; flex-direction: column; gap: 3px; align-items: center; margin: 8px 0 12px; }
+.hex-line { height: 4px; width: 80px; display: flex; gap: 8px; justify-content: center; }
+.hex-line .seg { height: 4px; border-radius: 1px; }
+.hex-line.yang .seg { width: 80px; background: var(--cyan); }
+.hex-line.yin .seg { width: 34px; background: var(--cyan); }
+.hex-line.changing .seg { animation: linePulse 2s ease-in-out infinite; }
+@keyframes linePulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+.hex-name { color: var(--text-bright); font-size: 13px; text-align: center; margin-top: 6px; }
+.hex-trigrams { color: var(--text-dim); font-size: 10px; text-align: center; }
+
+.info-row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #111320; }
+.info-row .lbl { color: var(--text-dim); font-size: 9px; text-transform: uppercase; letter-spacing: 0.15em; }
+.info-row .val { color: var(--text-mid); font-size: 11px; }
+
+.section-gap { margin-top: 14px; }
+
+.emotion-bar-wrap { margin: 4px 0; }
+.emotion-bar-label { display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px; }
+.emotion-bar-label .lbl { color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.15em; }
+.emotion-bar-label .val { color: var(--text-mid); }
+.emotion-bar { height: 4px; border-radius: 2px; background: #111320; overflow: hidden; }
+.emotion-bar-fill { height: 100%; border-radius: 2px; width: 70%; }
+
+.archetype-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 4px; margin: 2px 0;
+  border-left: 2px solid transparent;
+  border-radius: 2px;
+}
+.archetype-row.active { border-left-color: var(--cyan); background: #0d1020; }
+.archetype-row .state-dot { font-size: 10px; flex-shrink: 0; }
+.archetype-row .role { font-size: 11px; color: var(--text-dim); min-width: 60px; }
+.archetype-row.active .role { color: var(--text-bright); }
+.archetype-row .emo { font-size: 9px; color: var(--text-dim); margin-left: auto; }
+
+/* GRAPH LOADING OVERLAY */
+#graph-loading {
+  position: absolute; inset: 0; z-index: 15;
+  background: rgba(7,8,13,0.97);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 14px;
+  transition: opacity 0.4s ease;
+}
+#graph-loading.hidden { opacity: 0; pointer-events: none; }
+.gl-title { font-size: 10px; letter-spacing: 0.35em; color: var(--cyan); text-transform: uppercase; }
+.gl-phase { font-size: 9px; color: var(--text-mid); letter-spacing: 0.12em; min-height: 14px; text-transform: uppercase; }
+.gl-bar-wrap {
+  width: 280px; height: 2px; background: #1a1d2a; border-radius: 1px; overflow: hidden;
+  position: relative;
+}
+.gl-bar-fill {
+  height: 100%; background: var(--cyan); border-radius: 1px;
+  width: 0%; transition: width 0.25s ease;
+  box-shadow: 0 0 8px var(--cyan);
+}
+.gl-pct { font-size: 32px; color: var(--cyan); font-weight: 700; letter-spacing: 0.05em; font-variant-numeric: tabular-nums; }
+.gl-sub { font-size: 8px; color: var(--text-dim); letter-spacing: 0.15em; }
+
+/* CENTER - 3D GRAPH */
+#graph-container {
+  grid-row: 2; grid-column: 2;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-body);
+}
+#graph-container canvas { display: block; }
+#graph-status {
+  position: absolute; top: 8px; left: 12px;
+  font-size: 9px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.15em;
+}
+
+/* Visual Identification panel */
+#visual-id {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  text-align: center; z-index: 5; pointer-events: none;
+  background: rgba(7,8,13,0.7); border: 1px solid #0a2030;
+  padding: 6px 18px 8px; border-radius: 2px;
+}
+#visual-id .vid-label {
+  font-size: 8px; letter-spacing: 0.2em; color: var(--text-dim);
+  text-transform: uppercase; margin-bottom: 3px;
+}
+#visual-id .vid-name {
+  font-size: 14px; font-weight: 700; color: var(--cyan); letter-spacing: 0.15em;
+}
+#visual-id .vid-sub {
+  font-size: 9px; color: var(--text-mid); margin-top: 2px; letter-spacing: 0.1em;
+}
+#tooltip {
+  position: absolute; display: none;
+  background: rgba(13,15,23,0.95); border: 1px solid var(--cyan);
+  padding: 6px 10px; border-radius: 3px;
+  font-size: 10px; color: var(--text-bright);
+  pointer-events: none; z-index: 10; max-width: 300px;
+}
+#tooltip .tt-id { color: var(--cyan); }
+#tooltip .tt-state { margin-left: 6px; }
+#tooltip .tt-fid { color: var(--text-mid); }
+#tooltip .tt-text { color: var(--text-dim); font-size: 9px; margin-top: 4px; display: block;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+
+/* INSPECT DRAWER */
+#inspect-drawer {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 320px;
+  background: rgba(13,15,23,0.97); border-left: 1px solid var(--cyan);
+  padding: 14px; overflow-y: auto; display: none; z-index: 20;
+}
+#inspect-drawer .close-btn {
+  position: absolute; top: 8px; right: 10px; cursor: pointer;
+  color: var(--text-dim); font-size: 14px; background: none; border: none;
+}
+#inspect-drawer .close-btn:hover { color: var(--cyan); }
+#inspect-drawer h3 { color: var(--cyan); font-size: 12px; margin-bottom: 10px; }
+#inspect-content { font-size: 10px; line-height: 1.6; }
+#inspect-content .field { color: var(--text-dim); }
+#inspect-content .value { color: var(--text-mid); }
+#inspect-text { color: var(--text-bright); margin-top: 10px; padding: 8px;
+  background: #111320; border-radius: 3px; font-size: 10px; line-height: 1.5;
+  max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+
+/* RIGHT PANEL - VITALS */
+#vitals { grid-row: 2; grid-column: 3; border-left: 1px solid #1a1d2a; border-right: none; }
+
+.lifecycle-bar-wrap { margin: 8px 0 4px; }
+.lifecycle-bar { height: 8px; display: flex; border-radius: 2px; overflow: hidden; background: #111320; }
+.lifecycle-bar .seg { height: 100%; }
+.lifecycle-bar .seg.active { background: var(--cyan); }
+.lifecycle-bar .seg.forgiven { background: var(--amber); }
+.lifecycle-bar .seg.archived { background: var(--archived-dim); }
+.lifecycle-nums { display: flex; justify-content: space-between; margin-top: 4px; font-size: 9px; }
+.lifecycle-nums span { display: flex; align-items: center; gap: 3px; }
+.lifecycle-nums .dot { width: 5px; height: 5px; border-radius: 50%; display: inline-block; }
+
+.vitals-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #111320; }
+.vitals-row .lbl { color: var(--text-dim); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; }
+.vitals-row .val { color: var(--text-mid); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.reservoir-bar { height: 4px; background: #111320; border-radius: 2px; margin-top: 3px; overflow: hidden; }
+.reservoir-fill { height: 100%; background: var(--cyan); border-radius: 2px; width: 0%; }
+
+.skg-row {
+  display: flex; align-items: baseline; gap: 5px;
+  padding: 3px 0; border-bottom: 1px solid #0d1018;
+  font-size: 9px;
+}
+.skg-row .skg-id { color: var(--cyan); flex-shrink: 0; min-width: 36px; }
+.skg-row .skg-bar-wrap { flex: 1; height: 3px; background: #111320; border-radius: 1px; overflow: hidden; align-self: center; }
+.skg-row .skg-bar-fill { height: 100%; border-radius: 1px; }
+.skg-row .skg-val { color: var(--text-dim); flex-shrink: 0; min-width: 36px; text-align: right; }
+.skg-health-row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 9px; }
+.skg-health-row .lbl { color: var(--text-dim); }
+.skg-health-row .val { color: var(--text-mid); }
+
+/* BOTTOM - ACTIVITY */
+#activity {
+  grid-column: 1 / -1; grid-row: 3;
+  background: var(--bg-panel);
+  border-top: 1px solid #1a1d2a;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+
+#control-panel {
+  padding: 8px 14px;
+  border-bottom: 1px solid #1a1d2a;
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+#control-panel .panel-label { margin-bottom: 0; margin-right: 4px; }
+
+#recall-carousel {
+  display: flex; align-items: center; flex: 1; min-width: 0; gap: 4px; position: relative;
+}
+.carousel-arrow {
+  background: none; border: 1px solid #1a1d2a; color: var(--text-dim); width: 22px; height: 22px;
+  font-size: 12px; cursor: pointer; border-radius: 3px; flex-shrink: 0; display: flex;
+  align-items: center; justify-content: center; transition: all 0.15s; padding: 0;
+}
+.carousel-arrow:hover { border-color: var(--cyan); color: var(--cyan); }
+#recall-track {
+  display: flex; gap: 6px; overflow: hidden; flex: 1; scroll-behavior: smooth;
+}
+.recall-hit {
+  flex-shrink: 0; width: 200px; padding: 6px 10px; border: 1px solid #1a1d2a;
+  border-radius: 4px; cursor: pointer; overflow: hidden; transition: all 0.2s;
+}
+.recall-hit:hover { border-color: var(--cyan); background: #111320; }
+.recall-hit.selected { border-color: var(--cyan); background: rgba(0,229,255,0.08); box-shadow: 0 0 8px rgba(0,229,255,0.15); }
+.recall-hit .hit-id { color: var(--cyan); }
+.recall-hit .hit-fid { color: var(--text-dim); margin-left: 6px; font-size: 9px; }
+.recall-hit .hit-text { color: var(--text-dim); font-size: 9px; display: block;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+
+#log-panel { padding: 6px 14px; overflow-y: auto; flex: 1; min-height: 0; }
+#log-panel .log-entry { font-size: 10px; padding: 1px 0; line-height: 1.4; }
+.log-entry.boot { color: var(--emerging); }
+.log-entry.status { color: var(--text-dim); }
+.log-entry.dream { color: var(--amber); }
+.log-entry.error { color: var(--decaying); }
+.log-entry.recall { color: var(--cyan); }
+.log-entry .ts { color: #333a4a; margin-right: 6px; }
+
+.search-row { display: flex; gap: 6px; }
+.search-row input {
+  flex: 1; background: #111320; border: 1px solid #1a1d2a; color: var(--text-bright);
+  padding: 5px 8px; font-family: inherit; font-size: 11px; border-radius: 3px; outline: none;
+}
+.search-row input:focus { border-color: var(--cyan); }
+
+.btn {
+  background: #111320; border: 1px solid #1a1d2a; color: var(--text-mid);
+  padding: 5px 12px; font-family: inherit; font-size: 10px; cursor: pointer;
+  border-radius: 3px; text-transform: uppercase; letter-spacing: 0.1em;
+  transition: all 0.15s;
+}
+.btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.btn.dream-btn { border-color: var(--amber); color: var(--amber); }
+.btn.dream-btn:hover { background: rgba(255,171,64,0.1); }
+.recall-hit { padding: 4px 0; border-bottom: 1px solid #111320; cursor: pointer; }
+.recall-hit:hover { background: #111320; }
+.recall-hit .hit-id { color: var(--cyan); }
+.recall-hit .hit-fid { color: var(--text-dim); margin-left: 6px; }
+.recall-hit .hit-text { color: var(--text-dim); font-size: 9px; display: block;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div id="grid">
+  <!-- TOPBAR -->
+  <div id="topbar">
+    <span class="logo">DELOS</span>
+    <div class="breadcrumb" style="margin-left:12px;">
+      <span class="crumb">DIAGNOSTICS</span>
+      <span class="slash">/</span>
+      <span class="crumb">Hosts</span>
+      <span class="slash">/</span>
+      <span class="crumb active" id="tb-name">---</span>
+      <span class="slash">/</span>
+      <span class="crumb">Identity</span>
+    </div>
+    <div style="margin-left:16px; display:flex; align-items:center; gap:6px;">
+      <span class="radio-dot" id="tb-radio-dot" style="background:var(--text-dim)"></span>
+      <span class="radio-label" id="tb-radio-label">radio</span>
+    </div>
+    <span class="version" id="tb-version">---</span>
+    <button class="capture-btn" id="capture-btn" onclick="captureScreen()" title="Screenshot dashboard">CAPTURE</button>
+    <button class="ai-btn" id="ai-btn" onclick="toggleChat()" title="AI Assistant">AI</button>
+    <div class="conn-dot" id="conn-dot" title="Connection status"></div>
+  </div>
+  <div id="capture-flash"></div>
+
+  <!-- AI CHAT DRAWER -->
+  <div id="chat-drawer">
+    <div id="chat-messages"></div>
+    <div id="chat-input-row">
+      <input type="text" id="chat-input" placeholder="Ask the AI..." autocomplete="off">
+      <button id="chat-send" onclick="sendChat()">Send</button>
+    </div>
+  </div>
+
+  <!-- LEFT: IDENTITY -->
+  <div class="panel" id="identity">
+    <div class="panel-label">Hexagram</div>
+    <div class="hex-container" id="hex-lines"></div>
+    <div class="hex-name" id="hex-name">---</div>
+    <div class="hex-trigrams" id="hex-trigrams">---</div>
+
+    <div class="section-gap"></div>
+    <div class="panel-label">Horoscope</div>
+    <div class="info-row"><span class="lbl">Sign</span><span class="val" id="horo-sign">---</span></div>
+    <div class="info-row"><span class="lbl">Element</span><span class="val" id="horo-element">---</span></div>
+    <div class="info-row"><span class="lbl">Modality</span><span class="val" id="horo-modality">---</span></div>
+
+    <div class="section-gap"></div>
+    <div class="panel-label">Emotions</div>
+    <div id="emotions-container"></div>
+
+    <div class="section-gap"></div>
+    <div class="panel-label">Archetypes</div>
+    <div id="archetypes-container"></div>
+  </div>
+
+  <!-- CENTER: 3D GRAPH -->
+  <div id="graph-container">
+    <div id="graph-loading">
+      <div class="gl-title">Initializing Cognitive Map</div>
+      <div class="gl-pct" id="gl-pct">0%</div>
+      <div class="gl-bar-wrap"><div class="gl-bar-fill" id="gl-bar-fill"></div></div>
+      <div class="gl-phase" id="gl-phase">Connecting to memory store...</div>
+      <div class="gl-sub" id="gl-sub">&nbsp;</div>
+    </div>
+    <div id="graph-status">Loading graph...</div>
+    <div style="position:absolute;top:8px;right:12px;z-index:6;display:flex;gap:6px;">
+      <button id="proj-btn" class="btn" onclick="toggleProjection()" style="font-size:8px;padding:3px 8px;">PROJECTION</button>
+    </div>
+    <div id="visual-id">
+      <div class="vid-label">Visual Identification &nbsp;·&nbsp; Group — Host</div>
+      <div class="vid-name" id="vid-agent-name">---</div>
+      <div class="vid-sub" id="vid-hex-name">---</div>
+    </div>
+    <div id="tooltip"></div>
+    <div id="inspect-drawer">
+      <button class="close-btn" onclick="closeInspect()">&times;</button>
+      <h3 id="inspect-title">Memory #---</h3>
+      <div id="inspect-content"></div>
+      <div id="inspect-text"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: VITALS -->
+  <div class="panel" id="vitals">
+    <div class="panel-label">Memory Lifecycle</div>
+    <div class="lifecycle-bar-wrap">
+      <div class="lifecycle-bar" id="lc-bar"></div>
+      <div class="lifecycle-nums" id="lc-nums"></div>
+    </div>
+    <div class="info-row" style="margin-top:4px">
+      <span class="lbl">Keystones</span>
+      <span class="val" id="v-keystones" style="color:var(--keystone-white)">---</span>
+    </div>
+    <div class="info-row">
+      <span class="lbl">Total</span>
+      <span class="val" id="v-total">---</span>
+    </div>
+
+    <div class="section-gap"></div>
+    <div class="panel-label">Clock / Entropy</div>
+    <div class="vitals-row"><span class="lbl">Ticks</span><span class="val" id="v-ticks">---</span></div>
+    <div class="vitals-row"><span class="lbl">Dreams</span><span class="val" id="v-dreams">---</span></div>
+    <div class="vitals-row"><span class="lbl">Entropy</span><span class="val" id="v-entropy">---</span></div>
+    <div class="vitals-row">
+      <span class="lbl">Reservoir</span>
+      <span class="val" id="v-reservoir">---</span>
+    </div>
+    <div class="reservoir-bar"><div class="reservoir-fill" id="reservoir-fill"></div></div>
+    <div class="vitals-row"><span class="lbl">Radio</span><span class="val" id="v-radio">---</span></div>
+
+    <div class="section-gap"></div>
+    <div class="panel-label">Graph Topology</div>
+    <div class="vitals-row"><span class="lbl">Nodes</span><span class="val" id="v-gnodes">---</span></div>
+    <div class="vitals-row"><span class="lbl">Edges</span><span class="val" id="v-gedges">---</span></div>
+    <div class="vitals-row"><span class="lbl">Prime Terms</span><span class="val" id="v-pterms">---</span></div>
+
+    <div class="section-gap">
+      <div class="panel-label">Cognitive Load</div>
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+        <div id="load-tier-badge" style="font-size:9px; font-weight:700; letter-spacing:0.15em; padding:3px 8px; border-radius:3px; background:#111320; border:1px solid var(--text-dim); color:var(--text-dim);">---</div>
+        <div style="font-size:9px; color:var(--text-dim);" id="load-reason"></div>
+      </div>
+      <div class="vitals-row"><span class="lbl">Score</span><span class="val" id="load-score-val">---</span></div>
+      <div class="reservoir-bar" style="margin:4px 0 8px;"><div id="load-score-fill" style="height:100%; border-radius:2px; width:0%; background:var(--emerging); transition:width 0.5s, background 0.5s;"></div></div>
+      <div class="vitals-row"><span class="lbl">Active Tools</span><span class="val" id="load-tools-active">---</span></div>
+      <div class="vitals-row"><span class="lbl">Suppressed</span><span class="val" id="load-tools-suppressed" style="color:var(--amber);">---</span></div>
+      <div id="load-suppressed-list" style="margin-top:4px; font-size:9px; color:var(--text-dim); line-height:1.6;"></div>
+      <div class="vitals-row" style="margin-top:4px;"><span class="lbl">Craft Gate</span><span class="val" id="load-craft-gate">---</span></div>
+    </div>
+
+    <div class="section-gap" id="skg-section">
+      <div class="panel-label">SKG Dynamics</div>
+      <div style="font-size:8px; color:var(--text-dim); letter-spacing:0.12em; text-transform:uppercase; margin-bottom:4px;">Emerging</div>
+      <div id="skg-emerging"></div>
+      <div style="font-size:8px; color:var(--text-dim); letter-spacing:0.12em; text-transform:uppercase; margin:8px 0 4px;">Decaying</div>
+      <div id="skg-decaying"></div>
+      <div style="font-size:8px; color:var(--text-dim); letter-spacing:0.12em; text-transform:uppercase; margin:8px 0 4px;">Graph Health</div>
+      <div id="skg-health"></div>
+    </div>
+  </div>
+
+  <!-- BOTTOM: ACTIVITY -->
+  <div id="activity">
+    <div id="control-panel">
+      <span class="panel-label">RECALL</span>
+      <input type="text" id="recall-input" placeholder="search memories..." style="flex:0 1 200px; background:#111320; border:1px solid #1a1d2a; color:var(--text-bright); padding:4px 8px; font-family:inherit; font-size:11px; border-radius:3px; outline:none;" />
+      <button class="btn" onclick="doRecall()">SEARCH</button>
+      <button class="btn dream-btn" onclick="doDream()">DREAM</button>
+      <div id="recall-carousel">
+        <button class="carousel-arrow" onclick="scrollCarousel(-1)">&lsaquo;</button>
+        <div id="recall-track"></div>
+        <button class="carousel-arrow" onclick="scrollCarousel(1)">&rsaquo;</button>
+      </div>
+    </div>
+    <div id="log-panel">
+      <div class="panel-label">Activity Log</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+const EMOTION_COLORS = {
+  fear:'#5533ff', sadness:'#667799', joy:'#ffdd00', anger:'#ff4422',
+  boredom:'#445566', trust:'#22cc88', curiosity:'#00e5ff', peace:'#88bbcc',
+  determination:'#ff8800', love:'#ff66aa', anxiety:'#9944cc', confusion:'#887744',
+  grief:'#556677', nostalgia:'#997755', content:'#669966', neutral:'#556677'
+};
+const STATE_COLORS = { Active:'#00e5ff', Forgiven:'#ffab40', Archived:'#2a3040' };
+const SIGN_SYMBOLS = { Aries:'\u2648', Taurus:'\u2649', Gemini:'\u264A', Cancer:'\u264B',
+  Leo:'\u264C', Virgo:'\u264D', Libra:'\u264E', Scorpio:'\u264F', Sagittarius:'\u2650',
+  Capricorn:'\u2651', Aquarius:'\u2652', Pisces:'\u2653' };
+
+let identityData = null;
+let graphNodes = [];  // {id, x, y, z, state, fidelity, keystone, recalls, text}
+let graphEdges = [];  // {a, b, label, weight}
+let scene, camera, renderer, nodeMeshes = [], edgeLines = [], raycaster, mouse;
+let sphereTheta = 0, spherePhi = Math.PI/3, sphereR = 70;
+let isDragging = false, lastMouse = {x:0,y:0};
+let autoRotate = true;
+let projectionMode = false; // false=force-layout, true=attribute projection
+let projTransition = null;  // {start, from[], to[], duration}
+
+// --- FETCH HELPERS ---
+const CAPTURE_SERVER = 'http://localhost:8081';
+
+function fetchWithTimeout(url, opts = {}, timeout = 30000) {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), timeout);
+  return fetch(url, {...opts, signal: ctrl.signal}).finally(() => clearTimeout(id));
+}
+
+async function apiGet(path) {
+  const r = await fetchWithTimeout(`${API}${path}`);
+  return r.json();
+}
+
+async function apiPost(path, body = '') {
+  const r = await fetchWithTimeout(`${API}${path}`, {
+    method: 'POST', body,
+    headers: {'Content-Type': 'text/plain'}
+  });
+  return r.json();
+}
+
+function ts() {
+  const d = new Date();
+  return d.toTimeString().slice(0,8);
+}
+
+function log(msg, cls = 'status') {
+  const el = document.getElementById('log-panel');
+  const div = document.createElement('div');
+  div.className = `log-entry ${cls}`;
+  div.innerHTML = `<span class="ts">${ts()}</span>${msg}`;
+  if (el.children.length > 1) el.insertBefore(div, el.children[1]);
+  else el.appendChild(div);
+  while (el.children.length > 200) el.removeChild(el.lastChild);
+}
+
+// --- STATUS + CLOCK ---
+async function pollStatus() {
+  try {
+    const [statusRes, clockRes] = await Promise.all([apiGet('/status'), apiGet('/clock')]);
+    document.getElementById('conn-dot').classList.add('ok');
+
+    // Parse status
+    const s = statusRes.result;
+    const m = s.match(/rows=(\d+)/);
+    const mc = s.match(/active=(\d+)\s+forgiven=(\d+)\s+archived=(\d+)/);
+    const ks = s.match(/keystones=(\d+)/);
+    const gm = s.match(/graph:\s*(\d+)\s*nodes,\s*(\d+)\s*edges/);
+    const pm = s.match(/prime_tree:\s*(\d+)\s*terms/);
+
+    if (m) document.getElementById('v-total').textContent = m[1];
+    if (ks) document.getElementById('v-keystones').textContent = `\u25C6 ${ks[1]}`;
+    if (gm) {
+      document.getElementById('v-gnodes').textContent = gm[1];
+      document.getElementById('v-gedges').textContent = gm[2];
+    }
+    if (pm) document.getElementById('v-pterms').textContent = pm[1];
+
+    if (mc) {
+      const a = +mc[1], f = +mc[2], ar = +mc[3], tot = a + f + ar;
+      const bar = document.getElementById('lc-bar');
+      bar.innerHTML = `<div class="seg active" style="width:${a/tot*100}%"></div>` +
+        `<div class="seg forgiven" style="width:${f/tot*100}%"></div>` +
+        `<div class="seg archived" style="width:${ar/tot*100}%"></div>`;
+      document.getElementById('lc-nums').innerHTML =
+        `<span><span class="dot" style="background:var(--cyan)"></span>${a}</span>` +
+        `<span><span class="dot" style="background:var(--amber)"></span>${f}</span>` +
+        `<span><span class="dot" style="background:var(--archived-dim)"></span>${ar}</span>`;
+    }
+
+    // Parse clock
+    const c = clockRes.result;
+    const ct = c.match(/ticks=(\d+)/);
+    const cd = c.match(/dreams=(\d+)/);
+    const ce = c.match(/entropy_lifetime=(\S+)/);
+    const cr = c.match(/reservoir=(\S+)/);
+    const crd = c.match(/radio=(\S+)/);
+
+    if (ct) document.getElementById('v-ticks').textContent = ct[1];
+    if (cd) document.getElementById('v-dreams').textContent = cd[1];
+    if (ce) document.getElementById('v-entropy').textContent = ce[1];
+    if (cr) {
+      document.getElementById('v-reservoir').textContent = cr[1];
+      const bytes = parseInt(cr[1]) || 0;
+      document.getElementById('reservoir-fill').style.width = Math.min(bytes/1024*100, 100) + '%';
+    }
+    if (crd) {
+      const radio = crd[1];
+      document.getElementById('v-radio').textContent = radio;
+      const dot = document.getElementById('tb-radio-dot');
+      dot.style.background = radio === 'connected' ? 'var(--emerging)' : 'var(--text-dim)';
+      document.getElementById('tb-radio-label').textContent = radio;
+    }
+  } catch(e) {
+    document.getElementById('conn-dot').classList.remove('ok');
+    log(`FETCH ERROR: ${e.message}`, 'error');
+  }
+}
+
+// --- IDENTITY ---
+async function pollIdentity() {
+  try {
+    const data = await apiGet('/identity');
+    identityData = data;
+
+    const agentName = data.name || data.agent_id || '---';
+    document.getElementById('tb-name').textContent = agentName;
+    document.getElementById('tb-version').textContent = `v${data.version || '?'}`;
+    document.getElementById('vid-agent-name').textContent = agentName.toUpperCase();
+
+    // Hexagram
+    const hex = data.hexagram;
+    if (hex) {
+      const container = document.getElementById('hex-lines');
+      container.innerHTML = '';
+      // Lines are bottom-to-top in I Ching, but API gives them bottom[0] to top[5]
+      // Display top-to-bottom: reverse
+      const lines = [...hex.lines].reverse();
+      for (const v of lines) {
+        const div = document.createElement('div');
+        const isYin = v === 6 || v === 8;
+        const isChanging = v === 6 || v === 9;
+        div.className = `hex-line ${isYin ? 'yin' : 'yang'} ${isChanging ? 'changing' : ''}`;
+        if (isYin) {
+          div.innerHTML = '<div class="seg"></div><div class="seg"></div>';
+        } else {
+          div.innerHTML = '<div class="seg"></div>';
+        }
+        container.appendChild(div);
+      }
+      document.getElementById('hex-name').textContent = `#${hex.number} \u00B7 ${hex.name}`;
+      document.getElementById('hex-trigrams').textContent = `${hex.upper_name} over ${hex.lower_name}`;
+      document.getElementById('vid-hex-name').textContent = `Hexagram ${hex.number} · ${hex.name}`;
+    }
+
+    // Horoscope
+    const h = data.horoscope;
+    if (h) {
+      const sym = SIGN_SYMBOLS[h.sign] || '';
+      document.getElementById('horo-sign').textContent = `${sym} ${h.sign}`;
+      document.getElementById('horo-element').textContent = h.element;
+      document.getElementById('horo-modality').textContent = h.modality;
+    }
+
+    // Emotions
+    const ec = document.getElementById('emotions-container');
+    ec.innerHTML = '';
+    if (data.primary_emotion) {
+      ec.appendChild(makeEmotionBar('Primary', data.primary_emotion));
+    }
+    if (data.secondary_emotion) {
+      ec.appendChild(makeEmotionBar('Secondary', data.secondary_emotion));
+    }
+
+    // Archetypes
+    const ac = document.getElementById('archetypes-container');
+    ac.innerHTML = '';
+    if (data.archetypes) {
+      for (const arch of data.archetypes) {
+        const row = document.createElement('div');
+        row.className = `archetype-row ${arch.active ? 'active' : ''}`;
+        const stateMap = { Dormant:'\u25CB', Listening:'\u25C9', Engaged:'\u25CF', Reflecting:'\u25C8' };
+        const stateColor = { Dormant:'var(--text-dim)', Listening:'var(--cyan)', Engaged:'var(--emerging)', Reflecting:'var(--amber)' };
+        const dot = stateMap[arch.state] || '\u25CB';
+        const dotClr = stateColor[arch.state] || 'var(--text-dim)';
+        row.innerHTML = `<span class="state-dot" style="color:${dotClr}">${dot}</span>` +
+          `<span class="role">${arch.role}</span>` +
+          `<span class="emo">${arch.primary_emotion || ''}${arch.secondary_emotion ? '/'+arch.secondary_emotion : ''}</span>`;
+        ac.appendChild(row);
+      }
+    }
+  } catch(e) {
+    log(`Identity fetch error: ${e.message}`, 'error');
+  }
+}
+
+function makeEmotionBar(label, emotion) {
+  const wrap = document.createElement('div');
+  wrap.className = 'emotion-bar-wrap';
+  const color = EMOTION_COLORS[emotion] || 'var(--text-dim)';
+  wrap.innerHTML = `<div class="emotion-bar-label"><span class="lbl">${label}</span><span class="val">${emotion}</span></div>` +
+    `<div class="emotion-bar"><div class="emotion-bar-fill" style="background:${color}"></div></div>`;
+  return wrap;
+}
+
+// --- 3D GRAPH ---
+function initGraph() {
+  const container = document.getElementById('graph-container');
+  const w = container.clientWidth, h = container.clientHeight;
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x07080d);
+  scene.fog = new THREE.FogExp2(0x07080d, 0.008);
+
+  camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 2000);
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
+  container.appendChild(renderer.domElement);
+
+  // Grid plane — dark with faint teal lines
+  const gridHelper = new THREE.GridHelper(200, 40, 0x0a2030, 0x0a1520);
+  gridHelper.position.y = -25;
+  scene.add(gridHelper);
+
+  // Lights tuned for dark scene
+  scene.add(new THREE.AmbientLight(0x0a1a2a, 1.2));
+  const dl = new THREE.DirectionalLight(0x00e5ff, 0.5);
+  dl.position.set(40, 80, 30);
+  dl.castShadow = false;
+  scene.add(dl);
+  // Teal point light at center for node glow
+  const pl = new THREE.PointLight(0x00e5ff, 1.2, 120);
+  pl.position.set(0, 10, 0);
+  scene.add(pl);
+
+  raycaster = new THREE.Raycaster();
+  mouse = new THREE.Vector2();
+
+  updateCameraFromSpherical();
+
+  // Manual orbit
+  const canvas = renderer.domElement;
+  canvas.addEventListener('mousedown', e => {
+    isDragging = true; autoRotate = false;
+    lastMouse = {x: e.clientX, y: e.clientY};
+  });
+  canvas.addEventListener('mousemove', e => {
+    if (isDragging) {
+      const dx = e.clientX - lastMouse.x, dy = e.clientY - lastMouse.y;
+      sphereTheta -= dx * 0.005;
+      spherePhi = Math.max(0.1, Math.min(Math.PI - 0.1, spherePhi - dy * 0.005));
+      lastMouse = {x: e.clientX, y: e.clientY};
+      updateCameraFromSpherical();
+    }
+    // Tooltip
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    handleHover(e.clientX - rect.left, e.clientY - rect.top);
+  });
+  canvas.addEventListener('mouseup', () => { isDragging = false; });
+  canvas.addEventListener('mouseleave', () => { isDragging = false; hideTooltip(); });
+  canvas.addEventListener('wheel', e => {
+    sphereR = Math.max(20, Math.min(200, sphereR + e.deltaY * 0.05));
+    updateCameraFromSpherical();
+    e.preventDefault();
+  }, {passive: false});
+  canvas.addEventListener('click', handleClick);
+
+  // Resize
+  window.addEventListener('resize', () => {
+    const w2 = container.clientWidth, h2 = container.clientHeight;
+    camera.aspect = w2 / h2;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w2, h2);
+  });
+
+  animate();
+}
+
+function updateCameraFromSpherical() {
+  camera.position.set(
+    sphereR * Math.sin(spherePhi) * Math.cos(sphereTheta),
+    sphereR * Math.cos(spherePhi),
+    sphereR * Math.sin(spherePhi) * Math.sin(sphereTheta)
+  );
+  camera.lookAt(0, 0, 0);
+}
+
+function easeInOut(t) {
+  return t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  if (autoRotate) {
+    sphereTheta += 0.0003;
+    updateCameraFromSpherical();
+  }
+
+  const now = performance.now();
+  const t = now * 0.001;
+
+  // Projection transition
+  if (projTransition) {
+    const elapsed = now - projTransition.start;
+    const raw = Math.min(elapsed / projTransition.duration, 1);
+    const ease = easeInOut(raw);
+    for (let i = 0; i < nodeMeshes.length; i++) {
+      const f = projTransition.from[i], to = projTransition.to[i];
+      if (!f || !to) continue;
+      nodeMeshes[i].position.set(
+        f.x + (to.x - f.x) * ease,
+        f.y + (to.y - f.y) * ease,
+        f.z + (to.z - f.z) * ease
+      );
+    }
+    // Update edges during transition
+    updateEdgePositions();
+    if (raw >= 1) projTransition = null;
+  }
+
+  // Keystone pulse
+  for (const m of nodeMeshes) {
+    if (m.userData.keystone) {
+      m.material.emissiveIntensity = 0.6 + 0.3 * Math.sin(t * 2 + m.userData.id * 0.1);
+    }
+  }
+  renderer.render(scene, camera);
+}
+
+function updateEdgePositions() {
+  const idMap = {};
+  graphNodes.forEach(nd => idMap[nd.id] = nd);
+  for (let i = 0; i < edgeLines.length; i++) {
+    const e = graphEdges[i];
+    if (!e) continue;
+    const a = idMap[e.a], b = idMap[e.b];
+    if (!a || !b) continue;
+    // Find mesh positions (live, during transition)
+    const ma = nodeMeshes.find(m => m.userData.id === e.a);
+    const mb = nodeMeshes.find(m => m.userData.id === e.b);
+    if (!ma || !mb) continue;
+    const positions = edgeLines[i].geometry.attributes.position;
+    if (!positions) continue;
+    positions.setXYZ(0, ma.position.x, ma.position.y, ma.position.z);
+    positions.setXYZ(1, mb.position.x, mb.position.y, mb.position.z);
+    positions.needsUpdate = true;
+  }
+}
+
+function handleHover(mx, my) {
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(nodeMeshes);
+  if (hits.length > 0) {
+    const nd = hits[0].object.userData;
+    const tip = document.getElementById('tooltip');
+    tip.style.display = 'block';
+    tip.style.left = (mx + 12) + 'px';
+    tip.style.top = (my - 10) + 'px';
+    tip.innerHTML = `<span class="tt-id">#${nd.id}</span>` +
+      `<span class="tt-state" style="color:${STATE_COLORS[nd.state] || '#888'}">${nd.state}</span>` +
+      ` <span class="tt-fid">F=${nd.fidelity.toFixed(3)}</span> R=${nd.recalls}` +
+      (nd.keystone ? ' \u25C6' : '') +
+      (nd.text ? `<span class="tt-text">${escHtml(nd.text.slice(0,120))}</span>` : '');
+  } else {
+    hideTooltip();
+  }
+}
+
+function hideTooltip() { document.getElementById('tooltip').style.display = 'none'; }
+
+async function handleClick() {
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(nodeMeshes);
+  if (hits.length > 0) {
+    const nd = hits[0].object.userData;
+    highlightNode(nd.id);
+    showInspect(nd.id);
+  } else {
+    clearHighlight();
+  }
+}
+
+async function showInspect(id) {
+  try {
+    const [inspRes, getRes] = await Promise.all([apiGet(`/inspect/${id}`), apiGet(`/get/${id}`)]);
+    const drawer = document.getElementById('inspect-drawer');
+    drawer.style.display = 'block';
+    document.getElementById('inspect-title').textContent = `Memory #${id}`;
+
+    // Parse inspect result
+    const lines = inspRes.result.split('\n').slice(1);
+    let html = '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq > 0) {
+        const k = trimmed.slice(0, eq).trim();
+        const v = trimmed.slice(eq+1).trim();
+        html += `<div><span class="field">${k}:</span> <span class="value">${escHtml(v)}</span></div>`;
+      }
+    }
+    document.getElementById('inspect-content').innerHTML = html;
+
+    // Full text from /get
+    const text = getRes.tags?.text || '(no text)';
+    document.getElementById('inspect-text').textContent = text;
+  } catch(e) {
+    log(`Inspect error: ${e.message}`, 'error');
+  }
+}
+
+function closeInspect() { document.getElementById('inspect-drawer').style.display = 'none'; }
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// --- LOADING OVERLAY ---
+function setProgress(pct, phase, sub) {
+  const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+  document.getElementById('gl-pct').textContent = clamped + '%';
+  document.getElementById('gl-bar-fill').style.width = clamped + '%';
+  if (phase) document.getElementById('gl-phase').textContent = phase;
+  if (sub !== undefined) document.getElementById('gl-sub').textContent = sub || '\u00a0';
+}
+
+function hideLoading() {
+  const el = document.getElementById('graph-loading');
+  el.classList.add('hidden');
+  setTimeout(() => { el.style.display = 'none'; }, 450);
+}
+
+function showLoading() {
+  const el = document.getElementById('graph-loading');
+  el.style.display = 'flex';
+  el.style.opacity = '';
+  el.classList.remove('hidden');
+  setProgress(0, 'Connecting to memory store...', '');
+}
+
+// --- GRAPH DATA ---
+async function buildGraph() {
+  showLoading();
+  document.getElementById('graph-status').textContent = 'Building graph...';
+  try {
+    // Phase 1: Seed via /query — read-only, zero heat, returns structured JSON
+    setProgress(2, 'Seeding from memory store...', '');
+    const seedIds = new Set();
+    const [seedRes, ksRes] = await Promise.all([
+      apiPost('/query', 'SELECT id FROM docs ORDER BY recalls DESC LIMIT 60').catch(() => null),
+      apiPost('/query', 'SELECT id FROM docs WHERE keystone = true LIMIT 30').catch(() => null),
+    ]);
+    for (const res of [seedRes, ksRes]) {
+      if (res?.rows) for (const r of res.rows) seedIds.add(r.id);
+    }
+    setProgress(15, 'Expanding graph topology...', `${seedIds.size} seed nodes`);
+
+    // Phase 2: Expand neighbors — batched 5 at a time to avoid overwhelming tiny_http
+    const allIds = new Set(seedIds);
+    const edges = [];
+    const seedArr = [...seedIds];
+    const NEIGHBOR_BATCH = 5;
+    for (let i = 0; i < seedArr.length; i += NEIGHBOR_BATCH) {
+      const batch = seedArr.slice(i, i + NEIGHBOR_BATCH);
+      const batchResults = await Promise.all(
+        batch.map(id => apiGet(`/neighbors/${id}`).then(r => ({id, result: r.result})).catch(() => null))
+      );
+      for (const nr of batchResults) {
+        if (!nr || !nr.result) continue;
+        const matches = nr.result.matchAll(/^\s+(\d+)\s+\[(\w+)\]\s+w=([\d.]+)/gm);
+        for (const m of matches) {
+          const nid = +m[1];
+          allIds.add(nid);
+          edges.push({a: nr.id, b: nid, label: m[2], weight: +m[3]});
+        }
+      }
+      const pct = 15 + (i / seedArr.length) * 20;
+      setProgress(pct, 'Expanding graph topology...', `${edges.length} edges found`);
+    }
+
+    // Cap at 200
+    const idList = [...allIds].slice(0, 200);
+    setProgress(35, 'Fetching node data...', `${idList.length} nodes · ${edges.length} edges`);
+
+    // Phase 3: Single /query for all node data — replaces 200 individual /inspect calls
+    const inClause = idList.join(',');
+    const nodeRes = await apiPost('/query',
+      `SELECT id FROM docs WHERE id IN (${inClause})`).catch(() => null);
+
+    graphNodes = [];
+    if (nodeRes?.rows) {
+      for (const r of nodeRes.rows) {
+        graphNodes.push({
+          id: r.id,
+          state: r.state || 'Active',
+          fidelity: r.fidelity ?? 1,
+          keystone: r.keystone ?? false,
+          recalls: r.recalls ?? 0,
+          text: r.text || '',
+          x: 0, y: 0, z: 0
+        });
+      }
+    }
+    const nodeSet = new Set(graphNodes.map(n => n.id));
+    graphEdges = edges.filter(e => nodeSet.has(e.a) && nodeSet.has(e.b));
+
+    setProgress(80, 'Running force layout...', `${graphNodes.length} nodes · ${graphEdges.length} edges`);
+    await new Promise(r => setTimeout(r, 0)); // yield so browser repaints
+    forceLayout();
+
+    // Phase 5: Render (95→100%)
+    setProgress(95, 'Rendering vector space...', '');
+    await new Promise(r => setTimeout(r, 0));
+    renderGraph();
+
+    setProgress(100, 'Complete', '');
+    document.getElementById('graph-status').textContent =
+      `${graphNodes.length} nodes \u00B7 ${graphEdges.length} edges`;
+    log(`Graph built: ${graphNodes.length} nodes, ${graphEdges.length} edges`, 'boot');
+
+    updateSKGFromGraph();
+    setTimeout(hideLoading, 300);
+  } catch(e) {
+    setProgress(0, 'Error loading graph', e.message);
+    document.getElementById('graph-status').textContent = 'Graph error';
+    log(`Graph build error: ${e.message}`, 'error');
+    setTimeout(hideLoading, 2000);
+  }
+}
+
+function forceLayout() {
+  const n = graphNodes.length;
+  if (n === 0) return;
+
+  // Init random positions — sphere around origin
+  for (const nd of graphNodes) {
+    nd.x = (Math.random() - 0.5) * 40;
+    nd.y = (Math.random() - 0.5) * 30;
+    nd.z = (Math.random() - 0.5) * 40;
+    nd.vx = 0; nd.vy = 0; nd.vz = 0;
+  }
+
+  const idMap = {};
+  graphNodes.forEach((nd, i) => idMap[nd.id] = i);
+
+  const dt = 0.3, damping = 0.85, repK = 200, springK = 0.02, springLen = 12, gravity = 0.01;
+
+  for (let tick = 0; tick < 120; tick++) {
+    // Charge repulsion (simplified: only check nearby pairs for perf)
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        let dx = graphNodes[i].x - graphNodes[j].x;
+        let dy = graphNodes[i].y - graphNodes[j].y;
+        let dz = graphNodes[i].z - graphNodes[j].z;
+        let dist2 = dx*dx + dy*dy + dz*dz + 0.1;
+        let dist = Math.sqrt(dist2);
+        let f = repK / dist2;
+        let fx = f * dx/dist, fy = f * dy/dist, fz = f * dz/dist;
+        graphNodes[i].vx += fx * dt; graphNodes[i].vy += fy * dt; graphNodes[i].vz += fz * dt;
+        graphNodes[j].vx -= fx * dt; graphNodes[j].vy -= fy * dt; graphNodes[j].vz -= fz * dt;
+      }
+    }
+
+    // Spring attraction along edges
+    for (const e of graphEdges) {
+      const ai = idMap[e.a], bi = idMap[e.b];
+      if (ai === undefined || bi === undefined) continue;
+      let dx = graphNodes[bi].x - graphNodes[ai].x;
+      let dy = graphNodes[bi].y - graphNodes[ai].y;
+      let dz = graphNodes[bi].z - graphNodes[ai].z;
+      let dist = Math.sqrt(dx*dx + dy*dy + dz*dz) + 0.01;
+      let f = springK * (dist - springLen);
+      let fx = f * dx/dist, fy = f * dy/dist, fz = f * dz/dist;
+      graphNodes[ai].vx += fx * dt; graphNodes[ai].vy += fy * dt; graphNodes[ai].vz += fz * dt;
+      graphNodes[bi].vx -= fx * dt; graphNodes[bi].vy -= fy * dt; graphNodes[bi].vz -= fz * dt;
+    }
+
+    // Gravity to center
+    for (const nd of graphNodes) {
+      nd.vx -= nd.x * gravity * dt;
+      nd.vy -= nd.y * gravity * dt;
+      nd.vz -= nd.z * gravity * dt;
+    }
+
+    // Integrate
+    for (const nd of graphNodes) {
+      nd.vx *= damping; nd.vy *= damping; nd.vz *= damping;
+      nd.x += nd.vx * dt; nd.y += nd.vy * dt; nd.z += nd.vz * dt;
+    }
+
+  }
+}
+
+// --- ATTRIBUTE PROJECTION ---
+// Positions nodes in a 3-axis metric space:
+//   X = fidelity axis (semantic integrity, 0→1 maps to -30→+30)
+//   Y = activation axis (log recall count)
+//   Z = spread (deterministic hash of id so nodes don't pile up)
+function projectLayout() {
+  const maxRecall = Math.max(1, ...graphNodes.map(n => n.recalls));
+  for (const nd of graphNodes) {
+    // Deterministic per-node jitter (not random — same every call)
+    const h1 = ((nd.id * 2654435761) >>> 0) / 0xFFFFFFFF;
+    const h2 = ((nd.id * 1234567891) >>> 0) / 0xFFFFFFFF;
+    const h3 = ((nd.id * 987654321)  >>> 0) / 0xFFFFFFFF;
+    nd.px = (nd.fidelity - 0.5) * 54 + (h1 - 0.5) * 10;
+    nd.py = Math.log2(nd.recalls + 1) / Math.log2(maxRecall + 1) * 38 - 6
+             + (nd.keystone ? 8 : 0)
+             + (nd.state === 'Archived' ? -12 : 0)
+             + (h2 - 0.5) * 6;
+    nd.pz = (h3 - 0.5) * 50;
+  }
+}
+
+function toggleProjection() {
+  projectionMode = !projectionMode;
+  const btn = document.getElementById('proj-btn');
+  btn.textContent = projectionMode ? 'TOPOLOGY' : 'PROJECTION';
+  btn.style.borderColor = projectionMode ? 'var(--amber)' : '';
+  btn.style.color = projectionMode ? 'var(--amber)' : '';
+
+  if (graphNodes.length === 0) return;
+
+  // Compute target positions
+  if (projectionMode) projectLayout();
+
+  const from = nodeMeshes.map(m => ({
+    x: m.position.x, y: m.position.y, z: m.position.z
+  }));
+  const to = nodeMeshes.map((m, i) => {
+    const nd = m.userData;
+    return projectionMode
+      ? { x: nd.px, y: nd.py, z: nd.pz }
+      : { x: nd.x,  y: nd.y,  z: nd.z };
+  });
+  projTransition = { start: performance.now(), from, to, duration: 900 };
+}
+
+// Shared geometries — high-res, varied shapes per memory type
+const GEO_SPHERE   = new THREE.SphereGeometry(1, 32, 24);       // Active default
+const GEO_ICOSA    = new THREE.IcosahedronGeometry(1, 1);        // Keystone
+const GEO_DODECA   = new THREE.DodecahedronGeometry(1, 0);       // High-recall
+const GEO_OCTA     = new THREE.OctahedronGeometry(1, 0);         // Forgiven
+const GEO_TORUS    = new THREE.TorusGeometry(0.8, 0.35, 16, 32); // Archived
+const GEO_BOX      = new THREE.BoxGeometry(1.4, 1.4, 1.4, 2, 2, 2); // Consolidated
+
+function pickGeometry(nd) {
+  if (nd.keystone) return GEO_ICOSA;
+  if (nd.recalls >= 5) return GEO_DODECA;
+  if (nd.state === 'Forgiven') return GEO_OCTA;
+  if (nd.state === 'Archived') return GEO_TORUS;
+  return GEO_SPHERE;
+}
+
+function nodeColor(nd) {
+  if (nd.keystone) return 0xf0f4ff;
+  if (nd.state === 'Active') return 0x00c8e0;
+  if (nd.state === 'Forgiven') return 0xf0a030;
+  return 0x667788;
+}
+
+let selectedNodeId = null;
+
+function renderGraph() {
+  // Clear old
+  for (const m of nodeMeshes) { scene.remove(m); m.geometry?.dispose(); m.material?.dispose(); }
+  for (const l of edgeLines) { scene.remove(l); l.geometry?.dispose(); }
+  nodeMeshes = []; edgeLines = [];
+  projTransition = null;
+
+  for (const nd of graphNodes) {
+    const geo = pickGeometry(nd);
+    const col = nodeColor(nd);
+
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: col,
+      emissive: col,
+      emissiveIntensity: nd.keystone ? 0.8 : 0.35,
+      roughness: nd.keystone ? 0.1 : 0.4,
+      metalness: nd.keystone ? 0.8 : 0.5,
+      clearcoat: 0.6,
+      clearcoatRoughness: 0.1,
+      transparent: nd.state === 'Archived',
+      opacity: nd.state === 'Archived' ? 0.5 : 1.0,
+    });
+
+    const sz = Math.sqrt(nd.recalls + 1) * 1.2 + 1.0;
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(nd.x, nd.y, nd.z);
+    mesh.scale.setScalar(sz);
+    mesh.castShadow = true;
+    mesh.userData = nd;
+    scene.add(mesh);
+    nodeMeshes.push(mesh);
+  }
+
+  // Edges — updatable LineSegments (supports live position updates during projection transition)
+  const idMap = {};
+  graphNodes.forEach((nd, i) => idMap[nd.id] = i);
+
+  const edgeMat = new THREE.LineBasicMaterial({
+    color: 0x00aacc, transparent: true, opacity: 0.35
+  });
+
+  for (const e of graphEdges) {
+    const ai = idMap[e.a], bi = idMap[e.b];
+    if (ai === undefined || bi === undefined) continue;
+    const a = graphNodes[ai], b = graphNodes[bi];
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array([a.x, a.y, a.z, b.x, b.y, b.z]);
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const line = new THREE.Line(geo, edgeMat);
+    scene.add(line);
+    edgeLines.push(line);
+  }
+
+  // Re-apply selection highlight if active
+  if (selectedNodeId !== null) highlightNode(selectedNodeId);
+}
+
+function highlightNode(id) {
+  selectedNodeId = id;
+  for (const m of nodeMeshes) {
+    const nd = m.userData;
+    if (nd.id === id) {
+      m.material.emissive = new THREE.Color(0xff3366);
+      m.material.emissiveIntensity = 0.9;
+      m.scale.setScalar((Math.sqrt(nd.recalls + 1) * 1.2 + 1.0) * 1.4);
+    } else {
+      m.material.emissive = new THREE.Color(nd.keystone ? 0xf0f4ff : nodeColor(nd));
+      m.material.emissiveIntensity = nd.keystone ? 0.4 : 0.08;
+      const sz = Math.sqrt(nd.recalls + 1) * 1.2 + 1.0;
+      m.scale.setScalar(sz);
+    }
+  }
+}
+
+function clearHighlight() {
+  selectedNodeId = null;
+  for (const m of nodeMeshes) {
+    const nd = m.userData;
+    m.material.emissive = new THREE.Color(nd.keystone ? 0xf0f4ff : nodeColor(nd));
+    m.material.emissiveIntensity = nd.keystone ? 0.4 : 0.08;
+    m.scale.setScalar(Math.sqrt(nd.recalls + 1) * 1.2 + 1.0);
+  }
+}
+
+// --- CAROUSEL ---
+let carouselIndex = -1;
+let carouselHits = []; // [{id, fidelity, recalls, text}]
+
+function scrollCarousel(dir) {
+  const track = document.getElementById('recall-track');
+  track.scrollLeft += dir * 210;
+}
+
+function selectCarouselItem(idx) {
+  const track = document.getElementById('recall-track');
+  const items = track.querySelectorAll('.recall-hit');
+  items.forEach((el, i) => el.classList.toggle('selected', i === idx));
+  carouselIndex = idx;
+  if (items[idx]) items[idx].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  // Highlight in 3D graph
+  if (carouselHits[idx]) {
+    highlightNode(carouselHits[idx].id);
+    showInspect(carouselHits[idx].id);
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (document.activeElement === document.getElementById('recall-input')) return;
+  if (carouselHits.length === 0) return;
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    selectCarouselItem(Math.max(0, carouselIndex - 1));
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    selectCarouselItem(Math.min(carouselHits.length - 1, carouselIndex + 1));
+  }
+});
+
+// --- RECALL ---
+function parseRecallHits(resultText) {
+  const hits = [];
+  const entryRegex = /id=(\d+)\s+fidelity=([\d.]+)\s+recalls=(\d+)\s+text=(.*)/;
+  for (const line of resultText.split('\n')) {
+    const m = line.match(entryRegex);
+    if (!m) continue;
+    hits.push({ id: +m[1], fidelity: m[2], recalls: m[3], text: m[4] });
+  }
+  return hits;
+}
+
+async function doRecall() {
+  const q = document.getElementById('recall-input').value.trim();
+  if (!q) return;
+  log(`SEARCH: "${q}"`, 'recall');
+  try {
+    // Use /search (BM25, read-only) — does NOT add heat unlike /recall
+    const res = await apiPost('/search', JSON.stringify({query: q, k: 20}));
+
+    const track = document.getElementById('recall-track');
+    track.innerHTML = '';
+    carouselHits = [];
+    carouselIndex = -1;
+    clearHighlight();
+
+    if (res.error) {
+      log(`Search error: ${res.error}`, 'error');
+      return;
+    }
+
+    const results = res.results || [];
+    carouselHits = results.map(r => {
+      // Enrich with graph data if node is loaded
+      const gn = graphNodes.find(n => n.id === r.id);
+      return {
+        id: r.id,
+        fidelity: gn ? gn.fidelity.toFixed(3) : r.probability.toFixed(3),
+        recalls: gn ? gn.recalls : '?',
+        text: r.text || gn?.text || ''
+      };
+    });
+
+    for (let idx = 0; idx < carouselHits.length; idx++) {
+      const hit = carouselHits[idx];
+      const div = document.createElement('div');
+      div.className = 'recall-hit';
+      div.innerHTML = `<span class="hit-id">#${hit.id}</span><span class="hit-fid">F=${hit.fidelity} R=${hit.recalls}</span>` +
+        `<span class="hit-text">${escHtml(hit.text.slice(0, 150))}</span>`;
+      div.onclick = () => selectCarouselItem(idx);
+      track.appendChild(div);
+    }
+    log(`Search returned ${carouselHits.length} hits`, 'recall');
+  } catch(e) {
+    log(`Search error: ${e.message}`, 'error');
+  }
+}
+
+// --- DREAM ---
+async function doDream() {
+  log('DREAM initiated...', 'dream');
+  try {
+    const res = await apiPost('/dream');
+    log(`DREAM: ${res.result || 'completed'}`, 'dream');
+    // Rebuild graph after dream
+    setTimeout(buildGraph, 2000);
+  } catch(e) {
+    log(`Dream error: ${e.message}`, 'error');
+  }
+}
+
+// --- SKG DYNAMICS ---
+function updateSKGFromGraph() {
+  if (graphNodes.length === 0) return;
+
+  const active = graphNodes.filter(n => n.state === 'Active');
+  const archived = graphNodes.filter(n => n.state === 'Archived');
+  const forgiven = graphNodes.filter(n => n.state === 'Forgiven');
+
+  // Emerging: active nodes sorted by recalls desc
+  const emerging = [...active].sort((a, b) => b.recalls - a.recalls).slice(0, 5);
+  const maxRecalls = Math.max(1, emerging[0]?.recalls || 1);
+
+  const emergEl = document.getElementById('skg-emerging');
+  emergEl.innerHTML = emerging.length
+    ? emerging.map(n => `
+      <div class="skg-row">
+        <span class="skg-id">#${n.id}</span>
+        <div class="skg-bar-wrap"><div class="skg-bar-fill" style="width:${(n.recalls/maxRecalls*100).toFixed(0)}%;background:var(--emerging)"></div></div>
+        <span class="skg-val" style="color:var(--emerging)">${n.recalls}×</span>
+      </div>`).join('')
+    : '<div style="font-size:9px;color:var(--text-dim);padding:3px 0">no active nodes</div>';
+
+  // Decaying: active nodes with lowest fidelity (excluding keystones)
+  const decaying = [...active]
+    .filter(n => !n.keystone && n.fidelity < 0.999)
+    .sort((a, b) => a.fidelity - b.fidelity)
+    .slice(0, 5);
+
+  const decayEl = document.getElementById('skg-decaying');
+  decayEl.innerHTML = decaying.length
+    ? decaying.map(n => `
+      <div class="skg-row">
+        <span class="skg-id">#${n.id}</span>
+        <div class="skg-bar-wrap"><div class="skg-bar-fill" style="width:${(n.fidelity*100).toFixed(0)}%;background:var(--decaying)"></div></div>
+        <span class="skg-val" style="color:var(--decaying)">${(n.fidelity*100).toFixed(0)}%</span>
+      </div>`).join('')
+    : '<div style="font-size:9px;color:var(--text-dim);padding:3px 0">all fidelity intact</div>';
+
+  // Graph health metrics
+  const n = graphNodes.length;
+  const e = graphEdges.length;
+  const maxEdges = n * (n - 1) / 2;
+  const density = maxEdges > 0 ? (e / maxEdges * 100).toFixed(2) : '0.00';
+  const keystoneCount = graphNodes.filter(x => x.keystone).length;
+  const archiveRatio = n > 0 ? (archived.length / n * 100).toFixed(0) : 0;
+  const avgRecalls = active.length > 0
+    ? (active.reduce((s, x) => s + x.recalls, 0) / active.length).toFixed(1)
+    : '0';
+
+  document.getElementById('skg-health').innerHTML = `
+    <div class="skg-health-row"><span class="lbl">Density</span><span class="val">${density}%</span></div>
+    <div class="skg-health-row"><span class="lbl">Keystones</span><span class="val" style="color:var(--keystone-white)">${keystoneCount}</span></div>
+    <div class="skg-health-row"><span class="lbl">Archived</span><span class="val">${archiveRatio}%</span></div>
+    <div class="skg-health-row"><span class="lbl">Avg Recalls</span><span class="val">${avgRecalls}</span></div>
+  `;
+}
+
+async function pollSKG() {
+  updateSKGFromGraph();
+}
+
+// --- COGNITIVE LOAD ---
+const TIER_COLORS = {
+  NOMINAL:  { border: '#00ff88', text: '#00ff88', fill: '#00ff88' },
+  ELEVATED: { border: '#ffab40', text: '#ffab40', fill: '#ffab40' },
+  HIGH:     { border: '#ff6600', text: '#ff6600', fill: '#ff6600' },
+  CRITICAL: { border: '#ff4040', text: '#ff4040', fill: '#ff4040' },
+};
+
+async function pollTools() {
+  try {
+    const data = await apiGet('/tools');
+    if (data.error) return;
+
+    const tier = data.tier || 'NOMINAL';
+    const score = typeof data.load_score === 'number' ? data.load_score : 0;
+    const tools = data.tools || [];
+    const suppressed = data.suppressed || [];
+    const reason = data.reason || '';
+    const crafted = data.craft_gate_blocked === true;
+
+    const clr = TIER_COLORS[tier] || TIER_COLORS.NOMINAL;
+
+    // Tier badge
+    const badge = document.getElementById('load-tier-badge');
+    badge.textContent = tier;
+    badge.style.borderColor = clr.border;
+    badge.style.color = clr.text;
+    badge.style.background = tier === 'CRITICAL' ? 'rgba(255,64,64,0.12)' : '#111320';
+
+    // Reason
+    document.getElementById('load-reason').textContent = reason;
+
+    // Score bar
+    const pct = Math.round(score * 100);
+    document.getElementById('load-score-val').textContent = score.toFixed(3);
+    const fill = document.getElementById('load-score-fill');
+    fill.style.width = pct + '%';
+    fill.style.background = clr.fill;
+
+    // Tool counts
+    document.getElementById('load-tools-active').textContent = tools.length;
+    document.getElementById('load-tools-suppressed').textContent =
+      suppressed.length > 0 ? suppressed.length : '—';
+
+    // Suppressed list
+    const list = document.getElementById('load-suppressed-list');
+    if (suppressed.length > 0) {
+      list.textContent = suppressed.map(t => `↳ ${t}`).join('\n');
+    } else {
+      list.textContent = '';
+    }
+
+    // Craft gate
+    const gate = document.getElementById('load-craft-gate');
+    if (tier === 'CRITICAL') {
+      gate.textContent = 'BLOCKED';
+      gate.style.color = 'var(--decaying)';
+    } else {
+      gate.textContent = 'open';
+      gate.style.color = 'var(--emerging)';
+    }
+
+    // Log tier transitions
+    if (pollTools._lastTier && pollTools._lastTier !== tier) {
+      log(`Load tier: ${pollTools._lastTier} → ${tier} (score=${score.toFixed(3)})`, tier === 'CRITICAL' ? 'error' : 'dream');
+    }
+    pollTools._lastTier = tier;
+
+  } catch(e) {
+    // /tools not available — silent, leave panel as-is
+  }
+}
+pollTools._lastTier = null;
+
+// --- SCREEN CAPTURE ---
+async function captureScreen() {
+  const btn = document.getElementById('capture-btn');
+  const flash = document.getElementById('capture-flash');
+  btn.classList.add('capturing');
+  btn.textContent = 'CAPTURING...';
+
+  try {
+    // Grab the Three.js canvas as a data URL before html2canvas (it needs preserveDrawingBuffer)
+    // Re-render one frame so the canvas has content
+    renderer.render(scene, camera);
+    const glCanvas = renderer.domElement;
+    const glDataUrl = glCanvas.toDataURL('image/png');
+
+    // Use html2canvas on the full page
+    const canvas = await html2canvas(document.getElementById('grid'), {
+      backgroundColor: '#07080d',
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      // html2canvas can't read WebGL canvases, so we overlay it after
+      ignoreElements: el => el === glCanvas
+    });
+
+    // Composite: draw the Three.js canvas onto the html2canvas result
+    const ctx = canvas.getContext('2d');
+    const container = document.getElementById('graph-container');
+    const gridRect = document.getElementById('grid').getBoundingClientRect();
+    const cRect = container.getBoundingClientRect();
+    const sx = 2; // matches html2canvas scale
+    const offX = (cRect.left - gridRect.left) * sx;
+    const offY = (cRect.top - gridRect.top) * sx;
+    const cW = cRect.width * sx;
+    const cH = cRect.height * sx;
+
+    const img = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, offX, offY, cW, cH);
+      finishCapture(canvas);
+    };
+    img.onerror = () => finishCapture(canvas); // fallback: no 3D overlay
+    img.src = glDataUrl;
+  } catch(e) {
+    log(`Capture error: ${e.message}`, 'error');
+    btn.classList.remove('capturing');
+    btn.textContent = 'CAPTURE';
+  }
+
+  function finishCapture(canvas) {
+    // Flash effect
+    flash.classList.add('flash');
+    setTimeout(() => flash.classList.remove('flash'), 200);
+
+    const dataUrl = canvas.toDataURL('image/png');
+    const now = new Date();
+    const stamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `delos-diagnostic-${stamp}.png`;
+
+    // Download locally
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = dataUrl;
+    link.click();
+
+    // Also POST to capture server so Claude can read it
+    fetch(`${CAPTURE_SERVER}/capture`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({image: dataUrl, filename})
+    }).then(r => r.json()).then(r => {
+      log(`Capture saved: ${r.path}`, 'boot');
+    }).catch(() => {
+      log(`Capture downloaded (no capture server)`, 'status');
+    });
+
+    log(`Screen captured: ${filename}`, 'boot');
+    btn.classList.remove('capturing');
+    btn.textContent = 'CAPTURE';
+  }
+}
+
+// --- INIT ---
+async function init() {
+  log('DELOS Diagnostics booting...', 'boot');
+  initGraph();
+
+  // Initial fetches
+  await pollStatus();
+  await pollIdentity();
+  await pollTools();
+  log('Identity and status loaded', 'boot');
+
+  // Build graph
+  buildGraph();
+
+  // SKG check
+  pollSKG();
+
+  // Polling intervals
+  setInterval(pollStatus, 7000);
+  setInterval(pollTools, 7000);
+  setInterval(pollIdentity, 90000);
+  setInterval(pollSKG, 30000);
+  setInterval(buildGraph, 120000);
+
+  // Enter key for recall
+  document.getElementById('recall-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doRecall();
+  });
+}
+
+init();
+
+// ---------------------------------------------------------------------------
+// AI CHAT PANEL
+// ---------------------------------------------------------------------------
+const BROKER_URL = 'http://localhost:8082';
+let chatConversationId = null;
+let chatBusy = false;
+
+function toggleChat() {
+  const drawer = document.getElementById('chat-drawer');
+  const btn = document.getElementById('ai-btn');
+  drawer.classList.toggle('open');
+  btn.classList.toggle('active');
+  if (drawer.classList.contains('open')) {
+    document.getElementById('chat-input').focus();
+  }
+}
+
+function appendChatMessage(text, cls) {
+  const container = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + cls;
+  div.textContent = text;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  return div;
+}
+
+async function sendChat() {
+  if (chatBusy) return;
+  const input = document.getElementById('chat-input');
+  const message = input.value.trim();
+  if (!message) return;
+
+  input.value = '';
+  appendChatMessage(message, 'user');
+
+  const thinkingEl = appendChatMessage('thinking...', 'ai thinking');
+  chatBusy = true;
+  document.getElementById('chat-send').disabled = true;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+
+    const resp = await fetch(`${BROKER_URL}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, conversation_id: chatConversationId }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    const data = await resp.json();
+    thinkingEl.remove();
+
+    if (data.error) {
+      appendChatMessage('Error: ' + data.error, 'ai');
+    } else {
+      chatConversationId = data.conversation_id;
+      appendChatMessage(data.response || '(no response)', 'ai');
+
+      // Execute UI commands from the AI
+      if (data.ui_commands) {
+        for (const cmd of data.ui_commands) {
+          executeUICommand(cmd);
+        }
+      }
+    }
+  } catch (e) {
+    thinkingEl.remove();
+    appendChatMessage('Error: ' + (e.name === 'AbortError' ? 'timeout (60s)' : e.message), 'ai');
+  } finally {
+    chatBusy = false;
+    document.getElementById('chat-send').disabled = false;
+  }
+}
+
+function executeUICommand(cmd) {
+  const args = cmd.args || {};
+  switch (cmd.command) {
+    case 'highlight_node':
+      // Flash a node in the 3D graph
+      if (typeof highlightNode === 'function') highlightNode(args.id);
+      log(`AI: highlight node ${args.id}`, 'recall');
+      break;
+    case 'open_inspect':
+      if (typeof openInspect === 'function') openInspect(args.id);
+      log(`AI: inspect node ${args.id}`, 'recall');
+      break;
+    case 'rebuild_graph':
+      if (typeof buildGraph === 'function') buildGraph();
+      log('AI: rebuild graph', 'status');
+      break;
+    case 'do_recall':
+      if (args.query) {
+        document.getElementById('recall-input').value = args.query;
+        if (typeof doRecall === 'function') doRecall();
+      }
+      break;
+    case 'log':
+      log('AI: ' + (args.message || ''), 'status');
+      break;
+    default:
+      log(`AI: unknown command ${cmd.command}`, 'error');
+  }
+}
+
+// Enter key in chat input
+document.getElementById('chat-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendChat();
+});
+</script>
+</body>
+</html>
