@@ -26,7 +26,7 @@ pub struct InversionCheck {
 pub fn embed_text(shivvr_url: &str, text: &str) -> Option<Vec<f32>> {
     let expanded = crate::pali::expand(text);
     let body = serde_json::json!({ "text": expanded }).to_string();
-    let response = shivvr_post(shivvr_url, "/memory/_mcp/ingest", &body)?;
+    let response = shivvr_post(shivvr_url, "/temp/ferricula/ingest", &body)?;
     let val: serde_json::Value = serde_json::from_str(&response).ok()?;
     // Top-level embedding or nested in chunks[0]
     if let Some(emb) = val.get("embedding").and_then(|v| v.as_array()) {
