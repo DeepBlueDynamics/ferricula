@@ -79,6 +79,9 @@ fn load_dotenv() {
 }
 
 fn main() -> Result<()> {
+    // Install ring as the rustls crypto provider — required by reqwest/rmcp (rustls 0.23+)
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     // Load .env file (sibling to binary or cwd) — sets vars only if not already in env
     load_dotenv();
 

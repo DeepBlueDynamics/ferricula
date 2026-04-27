@@ -1,6 +1,6 @@
 [package]
 name = "ferricula"
-version = "0.9.1"
+version = "0.9.2"
 edition = "2024"
 
 [workspace]
@@ -20,7 +20,7 @@ hkdf = "0.12"
 sha2 = "0.10"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 hex = "0.4"
-rustls = "0.23"
+rustls = { version = "0.23", features = ["ring"] }
 webpki-roots = "0.26"
 rmcp = { version = "0.15", features = ["server", "macros", "transport-streamable-http-server", "schemars"] }
 axum = "0.8"
