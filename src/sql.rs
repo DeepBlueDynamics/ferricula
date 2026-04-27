@@ -377,7 +377,7 @@ fn resolve_vector_arg(expr: &Expr, shivvr_url: Option<&str>) -> Result<Vec<f32>>
             }
             let text = extract_literal_as_string(inner_args[0])?;
             let url = shivvr_url.ok_or_else(|| {
-                anyhow!("embed() requires CHONK_URL but no embedding service is configured")
+                anyhow!("embed() requires SHIVVR_URL but no embedding service is configured")
             })?;
             inversion::embed_text(url, &text)
                 .ok_or_else(|| anyhow!("embed() failed: shivvr did not return a vector for {:?}", text))

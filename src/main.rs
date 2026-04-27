@@ -119,7 +119,6 @@ fn main() -> Result<()> {
 
     // Load or create identity
     let shivvr_url = std::env::var("SHIVVR_URL")
-        .or_else(|_| std::env::var("CHONK_URL"))
         .unwrap_or_else(|_| "http://localhost:8080".to_string());
     let identity_entropy = get_identity_entropy();
     let (mut identity, is_new) = ferricula::identity::load_or_create(&data_dir, &identity_entropy);

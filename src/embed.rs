@@ -78,7 +78,6 @@ fn run_server(data_dir: &str, port: u16, should_stop: &Arc<AtomicBool>) -> anyho
     let agent_key = std::env::var("AGENT_KEY").ok();
     let planner = Planner::new(agent_key);
     let shivvr_url = std::env::var("SHIVVR_URL")
-        .or_else(|_| std::env::var("CHONK_URL"))
         .unwrap_or_else(|_| "http://localhost:8080".to_string());
 
     let clock_config = ClockConfig::from_env();
