@@ -563,6 +563,11 @@ fn process_http_commands(
                 let result = cmd_query_sql(db, &body).unwrap_or_else(|e| json_error(&e));
                 let _ = reply.send(result);
             }
+            HttpCommand::RefsDistinct { field, reply } => {
+                let values = db.engine().distinct_tag_values(&field);
+                let result = serde_json::json!({ "field": field, "values": values, "count": values.len() });
+                let _ = reply.send(result.to_string());
+            }
         }
     }
 }
@@ -584,9 +589,14 @@ fn handle_connect_json(db: &mut DurableEngine, body: &str) -> Result<String> {
         .unwrap_or("related");
     let kind = match val.get("kind").and_then(|v| v.as_str()) {
         Some("causal") => EdgeKind::Causal,
+        Some("structural") => EdgeKind::Structural,
         _ => EdgeKind::Semantic,
     };
-    let arrow = if kind == EdgeKind::Causal { "->" } else { "<->" };
+    let arrow = match kind {
+        EdgeKind::Causal => "->",
+        EdgeKind::Structural => "<~>",
+        EdgeKind::Semantic => "<->",
+    };
     db.connect(a, b, label.to_string(), 1.0, kind)?;
     Ok(format!("connected {a} {arrow} {b} [{label}]"))
 }
@@ -858,8 +868,25 @@ fn handle_command(
 
 fn cmd_remember(db: &mut DurableEngine, tail: &str) -> Result<String> {
     let value: serde_json::Value = serde_json::from_str(tail)?;
-    let row = parse_row_json(tail)?;
+    let mut row = parse_row_json(tail)?;
     let id = row.id;
+
+    // Parse optional `ref` block, flatten into row.tags so the engine's
+    // tag bitmap index picks them up, and stash the structured form on row.refs
+    // for downstream consumers (e.g. the `docs` query serializer).
+    if let Some(ref_val) = value.get("ref") {
+        match serde_json::from_value::<ferricula::model::MemoryRef>(ref_val.clone()) {
+            Ok(memory_ref) if !memory_ref.is_empty() => {
+                for (key, val) in memory_ref.to_tags() {
+                    // Don't clobber a tag the caller set explicitly — first writer wins.
+                    row.tags.entry(key).or_insert(val);
+                }
+                row.refs = Some(memory_ref);
+            }
+            Ok(_) => {} // empty ref block — ignore
+            Err(e) => bail!("invalid `ref` block: {e}"),
+        }
+    }
 
     let mut record = MemoryRecord::new(id);
 
@@ -1001,9 +1028,8 @@ fn cmd_query_sql(db: &DurableEngine, sql: &str) -> Result<String> {
         .iter()
         .filter_map(|&id| {
             let record = db.memory_store().get(id)?;
-            let text = db
-                .engine()
-                .get(id)
+            let row = db.engine().get(id);
+            let text = row
                 .and_then(|r| r.tags.get("text").cloned())
                 .unwrap_or_default();
             let end = {
@@ -1011,14 +1037,44 @@ fn cmd_query_sql(db: &DurableEngine, sql: &str) -> Result<String> {
                 while e > 0 && !text.is_char_boundary(e) { e -= 1; }
                 e
             };
-            Some(serde_json::json!({
+            let mut obj = serde_json::json!({
                 "id": id,
                 "fidelity": (record.fidelity * 1000.0).round() / 1000.0,
                 "recalls": record.recall_count,
                 "state": format!("{:?}", record.state),
                 "keystone": record.keystone,
                 "text": &text[..end],
-            }))
+            });
+            // Surface reference metadata if present, so callers can render
+            // bibliographic context without a second query.
+            if let Some(refs) = row.and_then(|r| r.refs.as_ref()) {
+                let map = obj.as_object_mut().expect("json object");
+                if let Some(v) = &refs.book {
+                    map.insert("book".into(), serde_json::Value::String(v.clone()));
+                }
+                if let Some(v) = &refs.author {
+                    map.insert("author".into(), serde_json::Value::String(v.clone()));
+                }
+                if let Some(v) = refs.volume {
+                    map.insert("volume".into(), serde_json::Value::from(v));
+                }
+                if let Some(v) = refs.chapter {
+                    map.insert("chapter".into(), serde_json::Value::from(v));
+                }
+                if let Some(v) = refs.page {
+                    map.insert("page".into(), serde_json::Value::from(v));
+                }
+                if let Some(v) = &refs.section {
+                    map.insert("section".into(), serde_json::Value::String(v.clone()));
+                }
+                if let Some(v) = &refs.url {
+                    map.insert("url".into(), serde_json::Value::String(v.clone()));
+                }
+                if let Some(v) = &refs.filename {
+                    map.insert("filename".into(), serde_json::Value::String(v.clone()));
+                }
+            }
+            Some(obj)
         })
         .collect();
 
@@ -1355,6 +1411,7 @@ fn cmd_confer(db: &mut DurableEngine, identity: &IdentityState, body: &str) -> R
         id: obs_id,
         tags: obs_tags,
         vector: vec![0.0; 768],
+        refs: None,
     };
     let mut obs_record = MemoryRecord::new(obs_id);
     obs_record.decay_alpha = 0.018; // taste channel — evaluation memory
@@ -1879,9 +1936,14 @@ fn cmd_connect(db: &mut DurableEngine, tail: &str) -> Result<String> {
     let label = parts.get(2).copied().unwrap_or("related").to_string();
     let kind = match parts.get(3).copied() {
         Some("causal") => EdgeKind::Causal,
+        Some("structural") => EdgeKind::Structural,
         _ => EdgeKind::Semantic,
     };
-    let arrow = if kind == EdgeKind::Causal { "->" } else { "<->" };
+    let arrow = match kind {
+        EdgeKind::Causal => "->",
+        EdgeKind::Structural => "<~>",
+        EdgeKind::Semantic => "<->",
+    };
     db.connect(a, b, label.clone(), 1.0, kind)?;
     Ok(format!("connected {a} {arrow} {b} [{label}]"))
 }
@@ -1910,7 +1972,11 @@ fn cmd_neighbors(db: &DurableEngine, tail: &str) -> Result<String> {
             .graph()
             .edge(id, nid)
             .map(|e| {
-                let arrow = if e.kind == EdgeKind::Causal { "->" } else { "<->" };
+                let arrow = match e.kind {
+                    EdgeKind::Causal => "->",
+                    EdgeKind::Structural => "<~>",
+                    EdgeKind::Semantic => "<->",
+                };
                 format!(" [{} {}] w={:.2}", e.label, arrow, e.weight)
             })
             .unwrap_or_default();
@@ -2068,7 +2134,12 @@ fn parse_row_json(text: &str) -> Result<Row> {
                 as f32,
         );
     }
-    Ok(Row { id, tags, vector })
+    Ok(Row {
+        id,
+        tags,
+        vector,
+        refs: None,
+    })
 }
 
 fn parse_metric(text: &str) -> Result<DistanceMetric> {

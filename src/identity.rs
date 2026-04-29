@@ -245,6 +245,7 @@ pub fn create_anchor(state: &IdentityState) -> (Row, MemoryRecord) {
         id: anchor_id,
         tags,
         vector,
+        refs: None,
     };
 
     let mut record = MemoryRecord::new(anchor_id);

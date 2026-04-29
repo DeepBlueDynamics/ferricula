@@ -148,6 +148,49 @@ const GLOSSARY: &[TermPair] = &[
         pali_meaning: "aggregate",
         code_terms: &["strata", "aggregate", "component", "who what when where why how"],
     },
+    TermPair {
+        pali: "javana",
+        pali_meaning: "impulsion",
+        // Runs 7× in each citta-vithi — the active processing phase that
+        // conditions the next moment. Determines overlap ratio (~7/17 ≈ 41%)
+        // for chunked embedding: each chunk needs javana-length prior context
+        // for the nimitta (initial sign) to be correctly identified.
+        code_terms: &["impulse", "processing", "chunk overlap", "context window", "sliding window", "stride"],
+    },
+    TermPair {
+        pali: "bhavanga",
+        pali_meaning: "life-continuum",
+        // The background stream of consciousness between active processes.
+        // Carries the conditioning context forward — the semantic "substrate"
+        // each new vithi arises from. In chunking: the overlapping prefix that
+        // provides continuity between adjacent embedding windows.
+        code_terms: &["background", "continuity", "stream", "context carry", "overlap prefix", "prior state"],
+    },
+    TermPair {
+        pali: "nimitta",
+        pali_meaning: "sign",
+        // The initial cognitive sign/image that a vithi latches onto.
+        // Without bhavanga conditioning, nimitta is misidentified.
+        // In embedding: the dominant semantic object a chunk encodes —
+        // degrades when chunk starts mid-context without overlap.
+        code_terms: &["sign", "image", "anchor", "dominant topic", "semantic object", "embedding target"],
+    },
+    TermPair {
+        pali: "tadārammaṇa",
+        pali_meaning: "registration",
+        // Final 2 moments of each vithi — registers the completed perception
+        // into the stream. In chunking: the last semantic units of each chunk
+        // that must be present in the next chunk's overlap to bridge processes.
+        code_terms: &["registration", "commit", "persist", "write", "finalize", "tail overlap"],
+    },
+    TermPair {
+        pali: "manodvāra",
+        pali_meaning: "mind-door",
+        // The internal sense-door through which mental objects are processed.
+        // In embedding: the attention mechanism that integrates prior context
+        // (bhavanga) with the current input to produce the nimitta.
+        code_terms: &["attention", "transformer", "self-attention", "context integration", "mind door"],
+    },
 ];
 
 /// Build lookup tables on first use.

@@ -114,6 +114,10 @@ pub enum HttpCommand {
         body: String,
         reply: mpsc::SyncSender<String>,
     },
+    RefsDistinct {
+        field: String,
+        reply: mpsc::SyncSender<String>,
+    },
 }
 
 /// Spawn the HTTP server thread.
@@ -411,6 +415,20 @@ fn dispatch(
             let (reply_tx, reply_rx) = mpsc::sync_channel(1);
             HttpCommand::Query {
                 body,
+                reply: reply_tx,
+            }
+            .send_and_recv(http_tx, reply_rx)?
+        }
+        ("GET", ["refs", "distinct"]) => {
+            let field = url
+                .split('?')
+                .nth(1)
+                .and_then(|qs| qs.split('&').find(|p| p.starts_with("field=")))
+                .map(|p| p.trim_start_matches("field=").to_string())
+                .unwrap_or_default();
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            HttpCommand::RefsDistinct {
+                field,
                 reply: reply_tx,
             }
             .send_and_recv(http_tx, reply_rx)?

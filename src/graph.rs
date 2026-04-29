@@ -15,6 +15,8 @@ pub enum EdgeKind {
     Semantic,
     /// Directed — causal link. Only `from` sees `to` in traversal.
     Causal,
+    /// Bidirectional — document order (prev/next chunk). Immune from dream overwriting.
+    Structural,
 }
 
 impl Default for EdgeKind {
@@ -60,7 +62,7 @@ impl MemoryGraph {
     pub fn connect(&mut self, from: u32, to: u32, label: String, weight: f32, kind: EdgeKind) {
         self.adjacency.entry(from).or_default().insert(to);
         match kind {
-            EdgeKind::Semantic => {
+            EdgeKind::Semantic | EdgeKind::Structural => {
                 self.adjacency.entry(to).or_default().insert(from);
             }
             EdgeKind::Causal => {
@@ -92,7 +94,7 @@ impl MemoryGraph {
                 }
             }
             match edge.kind {
-                EdgeKind::Semantic => {
+                EdgeKind::Semantic | EdgeKind::Structural => {
                     // Remove reverse adjacency: to → from
                     if let Some(bm) = self.adjacency.get_mut(&edge.to) {
                         bm.remove(edge.from);

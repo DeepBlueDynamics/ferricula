@@ -464,6 +464,11 @@ fn process_http_commands(
             HttpCommand::Query { reply, .. } => {
                 let _ = reply.send(serde_json::json!({"rows": []}).to_string());
             }
+            HttpCommand::RefsDistinct { field, reply } => {
+                let values = db.engine().distinct_tag_values(&field);
+                let result = serde_json::json!({ "field": field, "values": values, "count": values.len() });
+                let _ = reply.send(result.to_string());
+            }
         }
     }
 }
@@ -543,5 +548,5 @@ fn parse_row_json(text: &str) -> anyhow::Result<Row> {
     for x in vector_arr {
         vector.push(x.as_f64().ok_or_else(|| anyhow::anyhow!("vector values must be numbers"))? as f32);
     }
-    Ok(Row { id, tags, vector })
+    Ok(Row { id, tags, vector, refs: None })
 }

@@ -123,6 +123,14 @@ impl DurableEngine {
                     weight,
                 })?;
             }
+            EdgeKind::Structural => {
+                self.persistence.append_wal(&WalEntry::ConnectStructural {
+                    a,
+                    b,
+                    label,
+                    weight,
+                })?;
+            }
         }
         self.maybe_rotate()
     }
@@ -398,6 +406,14 @@ impl Persistence {
             WalEntry::InsertTerm { term, memory_id } => {
                 prime_tree.insert(&term, memory_id);
             }
+            WalEntry::ConnectStructural {
+                a,
+                b,
+                label,
+                weight,
+            } => {
+                graph.connect(a, b, label, weight, EdgeKind::Structural);
+            }
         }
         Ok(())
     }
@@ -578,6 +594,13 @@ enum WalEntry {
         label: String,
         weight: f32,
     },
+    // V5 entry — structural (document order, bidirectional, dream-immune)
+    ConnectStructural {
+        a: u32,
+        b: u32,
+        label: String,
+        weight: f32,
+    },
 }
 
 #[cfg(test)]
@@ -596,6 +619,7 @@ mod tests {
             id,
             tags,
             vector: vec![id as f32, 0.0, 1.0],
+            refs: None,
         }
     }
 

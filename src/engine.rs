@@ -60,6 +60,71 @@ impl Engine {
             .unwrap_or_default()
     }
 
+    /// Returns a bitmap of all IDs where `field` parses as `u32` and the parsed
+    /// value satisfies the requested numeric range. Used for reference fields
+    /// like `page`, `chapter`, `volume` that are stored in `tag_index` as their
+    /// decimal string representation.
+    ///
+    /// `low`/`high` of `None` means unbounded on that side. `inclusive_low` /
+    /// `inclusive_high` choose between `<`/`<=` and `>`/`>=` semantics.
+    /// Tag values that fail to parse as `u32` are silently skipped — this lets
+    /// the same field accept both numeric and string values without poisoning
+    /// range queries.
+    pub fn bitmap_for_tag_range(
+        &self,
+        field: &str,
+        low: Option<u32>,
+        high: Option<u32>,
+        inclusive_low: bool,
+        inclusive_high: bool,
+    ) -> RoaringBitmap {
+        let Some(values) = self.tag_index.get(&field.to_lowercase()) else {
+            return RoaringBitmap::new();
+        };
+        let mut result = RoaringBitmap::new();
+        for (val_str, bitmap) in values {
+            let Ok(n) = val_str.parse::<u32>() else {
+                continue;
+            };
+            let lo_ok = match low {
+                None => true,
+                Some(lo) => {
+                    if inclusive_low {
+                        n >= lo
+                    } else {
+                        n > lo
+                    }
+                }
+            };
+            let hi_ok = match high {
+                None => true,
+                Some(hi) => {
+                    if inclusive_high {
+                        n <= hi
+                    } else {
+                        n < hi
+                    }
+                }
+            };
+            if lo_ok && hi_ok {
+                result |= bitmap;
+            }
+        }
+        result
+    }
+
+    /// Returns all distinct tag values for `field`, sorted.  Uses the
+    /// already-maintained `tag_index` — O(k) where k is the number of
+    /// distinct values for that field.
+    pub fn distinct_tag_values(&self, field: &str) -> Vec<String> {
+        let Some(values) = self.tag_index.get(&field.to_lowercase()) else {
+            return Vec::new();
+        };
+        let mut v: Vec<String> = values.keys().cloned().collect();
+        v.sort();
+        v
+    }
+
     pub fn bitmap_jaccard(&self, left: &RoaringBitmap, right: &RoaringBitmap) -> f64 {
         let intersection = left.intersection_len(right);
         let union = left.union_len(right);
@@ -206,7 +271,12 @@ mod tests {
         let mut tags = BTreeMap::new();
         tags.insert("region".to_string(), region.to_string());
         tags.insert("tier".to_string(), tier.to_string());
-        Row { id, tags, vector }
+        Row {
+            id,
+            tags,
+            vector,
+            refs: None,
+        }
     }
 
     #[test]

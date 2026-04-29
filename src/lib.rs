@@ -25,7 +25,7 @@ pub mod tokenizer;
 pub mod transform;
 
 pub use engine::Engine;
-pub use model::{DistanceMetric, QueryResult, Row, VectorHit};
+pub use model::{DistanceMetric, MemoryRef, QueryResult, Row, VectorHit};
 pub use persist::DurableEngine;
 
 pub use corpus::SearchEngine;

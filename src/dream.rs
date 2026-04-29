@@ -363,6 +363,11 @@ fn consolidate_group(store: &mut MemoryStore, graph: &mut MemoryGraph, group: &[
         let neighbors = graph.neighbors(absorbed_id);
         for neighbor in neighbors.iter() {
             if neighbor != survivor_id {
+                // Never overwrite a structural (document-order) edge with a dream-generated one.
+                let existing_kind = graph.edge(survivor_id, neighbor).map(|e| e.kind);
+                if existing_kind == Some(EdgeKind::Structural) {
+                    continue;
+                }
                 graph.connect(survivor_id, neighbor, "consolidated".to_string(), 0.5, EdgeKind::Semantic);
                 edges_created += 1;
             }
@@ -529,6 +534,7 @@ mod tests {
             id,
             tags: BTreeMap::new(),
             vector,
+            refs: None,
         }
     }
 

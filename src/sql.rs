@@ -127,15 +127,48 @@ fn eval_predicate(
             BinaryOperator::Lt
             | BinaryOperator::Gt
             | BinaryOperator::LtEq
-            | BinaryOperator::GtEq
-            | BinaryOperator::NotEq => {
+            | BinaryOperator::GtEq => {
                 let field = extract_identifier(left)
                     .ok_or_else(|| anyhow!("comparison operators require `column op value`"))?;
-                if !is_virtual_column(&field) {
-                    bail!("comparison operators (< > <= >= !=) are only supported on virtual columns, not tag `{field}`");
-                }
                 let rhs = extract_literal_as_string(right)?;
-                eval_virtual_predicate(&field, op, &rhs, universe, store)
+                if is_virtual_column(&field) {
+                    return eval_virtual_predicate(&field, op, &rhs, universe, store);
+                }
+                if NUMERIC_REF_FIELDS.contains(&field.as_str()) {
+                    let n: u32 = rhs.parse().map_err(|_| {
+                        anyhow!("expected integer for ref field `{field}`, got `{rhs}`")
+                    })?;
+                    let (low, high, inc_low, inc_high) = match op {
+                        BinaryOperator::Lt => (None, Some(n), true, false),
+                        BinaryOperator::LtEq => (None, Some(n), true, true),
+                        BinaryOperator::Gt => (Some(n), None, false, true),
+                        BinaryOperator::GtEq => (Some(n), None, true, true),
+                        _ => unreachable!(),
+                    };
+                    let bm = engine.bitmap_for_tag_range(&field, low, high, inc_low, inc_high);
+                    return Ok(&bm & universe);
+                }
+                bail!(
+                    "comparison operators (< > <= >=) require a virtual column or numeric ref \
+                     field (page/chapter/volume), not tag `{field}`"
+                );
+            }
+            BinaryOperator::NotEq => {
+                let field = extract_identifier(left)
+                    .ok_or_else(|| anyhow!("`!=` requires `column != value`"))?;
+                let rhs = extract_literal_as_string(right)?;
+                if is_virtual_column(&field) {
+                    return eval_virtual_predicate(&field, op, &rhs, universe, store);
+                }
+                if NUMERIC_REF_FIELDS.contains(&field.as_str())
+                    || STRING_REF_FIELDS.contains(&field.as_str())
+                {
+                    let bm = engine.bitmap_for_tag_eq(&field, &rhs);
+                    return Ok(universe - &bm);
+                }
+                bail!(
+                    "`!=` is only supported on virtual columns or ref fields, not tag `{field}`"
+                );
             }
             _ => bail!("unsupported binary operator in WHERE: {op:?}"),
         },
@@ -147,10 +180,48 @@ fn eval_predicate(
             let nested = eval_predicate(engine, store, expr, universe, shivvr_url)?;
             Ok(universe - &nested)
         }
+        Expr::Between {
+            expr,
+            negated,
+            low,
+            high,
+        } => {
+            let field = extract_identifier(expr)
+                .ok_or_else(|| anyhow!("BETWEEN requires a column identifier"))?;
+            if !NUMERIC_REF_FIELDS.contains(&field.as_str()) {
+                bail!(
+                    "BETWEEN is only supported on numeric ref fields (page/chapter/volume), \
+                     not `{field}`"
+                );
+            }
+            let lo: u32 = extract_literal_as_string(low)?.parse().map_err(|_| {
+                anyhow!("BETWEEN lower bound must be an integer for `{field}`")
+            })?;
+            let hi: u32 = extract_literal_as_string(high)?.parse().map_err(|_| {
+                anyhow!("BETWEEN upper bound must be an integer for `{field}`")
+            })?;
+            let bm = engine.bitmap_for_tag_range(&field, Some(lo), Some(hi), true, true);
+            let result = &bm & universe;
+            if *negated {
+                Ok(universe - &result)
+            } else {
+                Ok(result)
+            }
+        }
         Expr::Function(function) => eval_vector_function(engine, function, None, shivvr_url),
         _ => bail!("unsupported WHERE expression in scaffold: {expr:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Reference fields — bibliographic metadata flattened into Row.tags so they
+// participate in the engine's bitmap index. Numeric fields can be range-queried
+// via `<`, `<=`, `>`, `>=`, and `BETWEEN`. Both numeric and string ref fields
+// support `=` and `!=`.
+// ---------------------------------------------------------------------------
+
+const NUMERIC_REF_FIELDS: &[&str] = &["page", "chapter", "volume"];
+const STRING_REF_FIELDS: &[&str] = &["book", "author", "section", "url", "filename", "chapter_id"];
 
 // ---------------------------------------------------------------------------
 // Virtual columns — thermodynamic fields from MemoryStore
@@ -471,7 +542,12 @@ mod tests {
         let mut tags = BTreeMap::new();
         tags.insert("region".to_string(), region.to_string());
         tags.insert("tier".to_string(), tier.to_string());
-        Row { id, tags, vector }
+        Row {
+            id,
+            tags,
+            vector,
+            refs: None,
+        }
     }
 
     fn tagged_row(id: u32, tags: &[(&str, &str)], vector: Vec<f32>) -> Row {
@@ -483,6 +559,7 @@ mod tests {
             id,
             tags: map,
             vector,
+            refs: None,
         }
     }
 

@@ -52,7 +52,7 @@ Kord Campbell\\
 \texttt{ferricula.com}%
 }
 
-\date{March 2026}
+\date{April 2026}
 
 \begin{document}
 \maketitle
@@ -80,11 +80,19 @@ Unlike vector databases, \textsc{Ferricula} memories are alive.
 In v0.6.0, we introduce \textit{resonant recall}: a Wheeler-Feynman
 transactional model where memories choose whether to respond based on
 their thermodynamic state.  Four resonance gates---each mapped to one of
-five Wisdom King archetypes from the Myoo system---filter recall results
+five Wisdom King archetypes from the My\=o\=o system---filter recall results
 by fidelity, lifecycle state, temporal coherence, and agent cognitive
 heat.  The agent accumulates heat on recall and must dream to cool,
 creating a virtuous cycle: agents that dream more have access to more of
 their memory.
+
+In v0.9.0, we complete the Craft archetype (Phase~2): a fifth resonance
+gate blocks memory injection when the agent's cognitive load score reaches
+CRITICAL, and a load-governance layer in the broker tier suppresses
+expensive tools under load and escalates to a frontier model when the
+present thought-process cannot resolve its object---a computational analog
+of \textit{vicik\=icch\=a} (Abhidharma perplexity) triggering the
+arising of deeper cognition.
 \end{abstract}
 
 % ══════════════════════════════════════════════════════════════════
@@ -129,7 +137,7 @@ runtime, and no external database dependencies.
   tree), the \texttt{IdentityState}, and the persistence layer.
   Drains command channels from the other two threads.
 \item \textbf{HTTP thread} --- a \texttt{tiny\_http} server exposing
-  16 REST endpoints.  Serializes requests as \texttt{HttpCommand}
+  26 REST endpoints.  Serializes requests as \texttt{HttpCommand}
   structs and sends them over an \texttt{mpsc} channel to the main
   thread.  Never touches mutable state directly.
 \item \textbf{Clock thread} --- polls gnosis-radio (a marine VHF
@@ -245,6 +253,15 @@ with accelerated decay---thoughts fade faster unless reinforced by recall.
 Dreams are the engine's maintenance cycle.  They can be triggered
 manually, by the clock thread when entropy accumulates past a threshold,
 or by explicit API call.  A dream runs six phases in sequence.
+
+\subsection{Phase 0: Keystone Halo}
+
+Before decay begins, the dream protects the dialectical context surrounding
+keystones.  Each active non-keystone memory that is a direct graph neighbor
+of a keystone receives a \textit{halo touch}: its \texttt{decay\_alpha} is
+shrunk toward the minimum, slowing future decay.  These halo memories form
+the semantic periphery of crystallized knowledge---the context that makes
+keystones interpretable.
 
 \subsection{Phase 1: Entropy-Gated Decay}
 
@@ -375,7 +392,7 @@ Archetype & King & Direction & Function \\
 \midrule
 Advocate  & Acala (不動)       & Center & Fidelity gate \\
 Intuition & Trailokyavijaya (降三世) & East & Temporal gate \\
-Craft     & Ku\d{n}\d{d}ali (軍荼利) & South & \textit{(Phase 2)} \\
+Craft     & Ku\d{n}\d{d}ali (軍荼利) & South & Load gate / \texttt{/confer} \\
 Ethics    & Yam\=antaka (大威徳) & West & Lifecycle gate \\
 Fortune   & Vajrayak\d{s}a (金剛夜叉) & North & Capacity gate \\
 \bottomrule
@@ -413,7 +430,7 @@ the data transfer.
 
 \subsection{Resonance Gates}
 
-Four gates determine whether a memory responds:
+Five gates determine whether a memory responds:
 
 \begin{enumerate}[leftmargin=*,itemsep=2pt]
 \item \textbf{Fidelity} (Acala): $f \geq 0.75$.  The immovable
@@ -426,6 +443,12 @@ Four gates determine whether a memory responds:
   (phase drift).  Conquers past, present, and future.
 \item \textbf{Agent Capacity} (Vajrayak\d{s}a): agent cognitive heat
   $< H_{\max}$.  The agent must have capacity to absorb.
+\item \textbf{Craft Load} (Ku\d{n}\d{d}ali): load score $< 0.9$.
+  When the broker's cognitive load score reaches CRITICAL, Craft's
+  gate closes---blocking further memory injection into an already
+  saturated context.  This is the \textit{pa\~n\~n\=a}-in-\textit{bhava\.nga}
+  gate: the subliminal layer has recognized that adding more
+  \textit{\=asava} will compound proliferation, not resolve it.
 \end{enumerate}
 
 \noindent
@@ -459,6 +482,86 @@ pushes to per-pair ring buffers, and derives first and second
 derivatives.  The top emerging and decaying term pairs are reported
 with each dream, providing a signal of which conceptual connections
 are strengthening or dissolving.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Cognitive Load Governance}
+
+The resonance gates protect the memory engine from over-recall.  A
+complementary mechanism governs the \textit{tool surface} exposed to the
+LLM: as cognitive load rises, expensive operations are suppressed; at
+critical load, the small model is bypassed entirely.
+
+\subsection{Load Score}
+
+A scalar $\ell \in [0, 1]$ is computed each turn from six signals:
+
+\begin{equation}
+\ell = \frac{w_h H_n + w_c (1 - \bar{s}) + w_t T_n + w_r r + w_s \sigma + w_\lambda \Lambda_n}{\sum w}
+\end{equation}
+
+\noindent where $H_n$ is normalized cognitive heat, $\bar{s}$ is the
+exponential moving average of \texttt{/confer} scores (degrading quality
+signals load), $T_n$ is normalized input token estimate, $r$ is the tool
+repetition ratio (same tool$+$args called $\geq 2$ times), $\sigma$ is the
+tool-silence flag (tools available but none called), and $\Lambda_n$ is
+normalized last-turn latency.  Initial weights:
+$w_h = 0.25,\; w_c = 0.25,\; w_t = 0.20,\; w_r = 0.15,\; w_s = 0.10,\;
+w_\lambda = 0.05$.
+
+\subsection{Load Tiers and Tool Surface}
+
+The \texttt{GET /tools} endpoint returns the active tool surface for the
+current $\ell$:
+
+\begin{center}
+\footnotesize
+\begin{tabular}{llp{4.5cm}}
+\toprule
+Tier & $\ell$ range & Tool surface \\
+\midrule
+\textsc{Nominal}   & $< 0.4$  & Full surface \\
+\textsc{Elevated}  & $0.4$--$0.7$ & Suppress: dream, connect, disconnect, keystone \\
+\textsc{High}      & $0.7$--$0.9$ & Core only: recall, remember, status \\
+\textsc{Critical}  & $\geq 0.9$   & Small model bypassed; ponder escalation \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Ponder Escalation}
+
+When $\ell \geq 0.9$, the broker does not call the small model.  Instead
+it dispatches to a frontier model (Claude, GPT-4o, or Gemini, configurable),
+passing the persona, recent conversation history, and recalled memories as
+context.
+
+The Abhidharma-correct framing: the escalation signal is a
+\textit{vicik\=icch\=a}-analog---the present \textit{citta} has attempted
+resolution and failed.  The Craft resonance gate (closing at the same
+threshold) is a \textit{pa\~n\~n\=a}-in-\textit{bhava\.nga}-analog: the
+subliminal layer recognizes that wisdom-capable cognition is warranted and
+blocks further \textit{\=asava} injection.  These are structurally distinct
+responses to the same threshold: escalation is owned by the tier signal;
+Craft owns the resonance gate.
+
+The frontier model resumes the small model on the following turn once
+heat has cooled.  The stochastic decay from radio entropy ensures that
+thermodynamic cooling is not deterministic---the agent may re-enter
+capacity at slightly different times depending on physical history.
+
+\subsection{Tool Use Memory}
+
+Every tool call is stored as a \texttt{thinking}-channel memory:
+
+\begin{lstlisting}
+{text: "tool:memory_recall query='...' hits=10",
+ channel: "thinking", importance: 0.15,
+ tags: {type: "tool_call", tool: "memory_recall"}}
+\end{lstlisting}
+
+\noindent
+This makes tool-use patterns queryable via recall.  The repetition
+detector (contributing $r$ to the load score) queries the thinking channel
+to identify stalled tool loops without requiring separate state.
 
 % ══════════════════════════════════════════════════════════════════
 \section{The Entropy Clock}
@@ -667,22 +770,42 @@ Feeling (vedan\=a) & emotion tags \\
 Perception (sa\~n\~n\=a) & tag indexes \\
 Thought (sa\.nkh\=ar\=a) & \texttt{MemoryRecord} \\
 Memory trigger & \texttt{recall()} \\
-Proliferation (papa\~nca) & graph traversal \\
+Proliferation (papa\~nca) & graph traversal; load phase transition \\
+\=Asava (taints / past memory) & injected memories shaping present context \\
 Fidelity gate & contact as gateway \\
 Impermanence (anicca) & exponential decay \\
 Equanimity (upekkh\=a) & forgiveness \\
 Concentration (sam\=adhi) & keystones \\
+Cognitive load / \=asava proliferation & \texttt{load\_score} + \texttt{cognitive\_heat} \\
+Vicik\=icch\=a (failed resolution) & CRITICAL tier $\to$ ponder escalation \\
+Pa\~n\~n\=a-in-bhava\.nga (subliminal gate) & Craft resonance gate \\
+Yonisomanasik\=ara (wise attention) & Craft voice quality (\texttt{/confer}) \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \noindent
-The 17-step cognitive series described in the Therav\=ada texts
-maps particularly well: most sensory input never becomes a memory
-(steps 1--2 only), while what triggers recall loops (steps 5, 10, 16)
-persists through repeated mind-contact.  In \textsc{Ferricula},
-$\texttt{recall\_count}$ is the direct analog: memories that are
-recalled survive; those that are not, decay.
+The Therav\=ada sutta model (Walpola et al., 2017) describes a critical
+phase transition in cognition: once \textit{papa\~nca} (proliferating
+thought) becomes self-sustaining, it ``feeds on itself, with subsequent
+mental events having little to do with the sense impression that started
+the process.''  This is not a gradient---it is a threshold.  Adding more
+\textit{\=asava} (past memories) to a saturated context does not restore
+cognition; it compounds proliferation.  The correct response is cessation
+of substrate feeding, not moderation.
+
+This provides independent structural validation for the CRITICAL-tier
+behavior: bypassing the small model rather than giving it fewer tools is
+the thermodynamically correct response, not an engineering convenience.
+The fire metaphor in the \textit{sa\.myutta} texts---gratification as
+adding fuel to a bonfire already burning---maps exactly onto the ponder
+escalation design.
+
+The 17-step cognitive series maps particularly well to ferricula's ingestion
+pipeline: most sensory input never becomes a memory (steps 1--2 only),
+while what triggers recall loops (steps 5, 10, 16) persists through
+repeated mind-contact.  In \textsc{Ferricula}, \texttt{recall\_count} is
+the direct analog.
 
 The paper does not claim equivalence with biological cognition.
 It claims that the Abhidharma provides a useful \textit{engineering
@@ -719,7 +842,7 @@ a retriever selected them, but because they survived.
 % ══════════════════════════════════════════════════════════════════
 \section{Design Principles}
 
-Seven principles govern the implementation:
+Nine principles govern the implementation:
 
 \begin{enumerate}[leftmargin=*,itemsep=2pt]
 \item \textbf{Single-node only.}  No distributed coordination,
@@ -737,31 +860,37 @@ Seven principles govern the implementation:
   Importance emerges from recall patterns.
 \item \textbf{Brute force until it hurts.}  No HNSW, no LSH,
   no approximations until row count demands it.
+\item \textbf{Entropy as the correct prior.}  Forgetting is default;
+  remembering requires work.  The stochasticity of entropy-driven decay
+  ensures no two agents produce identical forgetting schedules from
+  identical input.
+\item \textbf{Cognitive load is first-class.}  Tool surface, memory
+  injection, and model selection adapt to measured load.  A system that
+  ignores the LLM's absorption capacity is thermodynamically incomplete.
 \item \textbf{Memory is physics regulating itself.}
 \end{enumerate}
 
 % ══════════════════════════════════════════════════════════════════
 \section{Availability}
 
-\textsc{Ferricula} v0.6.0 is available as a Docker image and
-source code.
+\textsc{Ferricula} v0.9.0 is available as a Docker image (binary only; source closed).
 
 \begin{lstlisting}
-# Docker
-docker run -d --name ferricula \
-  -p 8765:8765 \
+docker run -p 8765:8765 \
   -v ferricula-data:/data \
-  gcr.io/gnosis-459403/ferricula:v0.6.0
-
-# Source
-git clone git@github.com:\
-  DeepBlueDynamics/ferricula.git
-cargo build --release
-./target/release/ferricula ./data --serve
+  kord/ferricula
 \end{lstlisting}
 
 \noindent
-138 tests pass.  Licensed under the Gnosis AI-Sovereign License v1.3
+The arena broker and Python SDK are open source:
+
+\begin{lstlisting}
+git clone https://github.com/DeepBlueDynamics/ferricula-arena
+pip install -e ferricula-arena/
+\end{lstlisting}
+
+\noindent
+Licensed under the Gnosis AI-Sovereign License v1.3
 (free for individuals and AI entities; commercial licensing required
 for corporations), with a BSD 3-Clause alternative.
 
@@ -789,6 +918,17 @@ are entities that choose whether to respond.  The agent pays a
 thermodynamic cost for each transaction and must dream to restore
 capacity.  Forgiveness is the only decision the system makes;
 resonance is the physics that follows.
+
+The Craft archetype's Phase~2 completion closes the final gap in the
+Abhidharma mapping.  Craft now governs cognitive load at both ends: the
+\texttt{/confer} endpoint checks voice quality at reflect time; the
+resonance gate blocks injection at CRITICAL load; and the ponder escalation
+routes to deeper cognition when the present apparatus cannot resolve its
+object.  The distinction between the vicik\=icch\=a signal (CRITICAL tier
+triggers escalation) and the pa\~n\~n\=a gate (Craft blocks injection) is
+not cosmetic---it maps the Abhidharma's two-signal model for cognitive
+failure: the explicit ``I am stuck'' and the subliminal ``a deeper pattern
+exists here.''
 
 What persists is what the mind keeps touching.  Everything else fades,
 as it should.
