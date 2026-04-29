@@ -1,0 +1,26 @@
+x-ferricula: &ferricula
+  image: ferricula:latest
+  extra_hosts: ["host.docker.internal:host-gateway"]
+  environment:
+    CHONK_URL: "http://host.docker.internal:8080"
+
+services:
+  faraday:
+    <<: *ferricula
+    ports: ["8773:8765", "8873:8766"]
+    volumes: ["./data_faraday:/data"]
+
+  weber:
+    <<: *ferricula
+    ports: ["8774:8765", "8874:8766"]
+    volumes: ["./data_weber:/data"]
+
+  assis:
+    <<: *ferricula
+    ports: ["8775:8765", "8875:8766"]
+    volumes: ["./data_assis:/data"]
+
+  tesla:
+    <<: *ferricula
+    ports: ["8776:8765", "8876:8766"]
+    volumes: ["./data_tesla:/data"]

@@ -1,0 +1,9 @@
+services:
+  assis:
+    image: ferricula:latest
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      # Cloud shivvr for embedding/inversion. For local: http://host.docker.internal:8080
+      CHONK_URL: "https://shivvr.nuts.services"
+    ports: ["8780:8765", "8880:8766"]
+    volumes: ["./data_assis_reader:/data"]

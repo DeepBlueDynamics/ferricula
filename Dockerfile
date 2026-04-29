@@ -2,7 +2,7 @@
 # ferricula — thermodynamic memory engine
 # Build: docker build -t ferricula .
 # Run:   docker run -p 8765:8765 -p 8766:8766 -v ferricula-data:/data ferricula
-# Multi: docker run -p 8773:8773 -p 8874:8774 -e PORT=8773 -v my-data:/data ferricula
+# Multi: docker run -p 8773:8773 -p 8774:8774 -e PORT=8773 -v my-data:/data ferricula
 # ============================================================
 
 FROM rust:1.88-bookworm AS builder

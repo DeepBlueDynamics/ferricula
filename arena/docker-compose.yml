@@ -1,0 +1,47 @@
+x-ferricula: &ferricula
+  image: ferricula:latest
+  extra_hosts: ["host.docker.internal:host-gateway"]
+  environment:
+    CHONK_URL: "http://host.docker.internal:8080"
+    RADIO_URL: "http://host.docker.internal:9080"
+
+services:
+  dantes:
+    <<: *ferricula
+    ports: ["8765:8765", "8865:8766"]
+    volumes: ["./data_dantes:/data"]
+
+  mercedes:
+    <<: *ferricula
+    ports: ["8766:8765", "8866:8766"]
+    volumes: ["./data_mercedes:/data"]
+
+  fernand:
+    <<: *ferricula
+    ports: ["8767:8765", "8867:8766"]
+    volumes: ["./data_fernand:/data"]
+
+  danglars:
+    <<: *ferricula
+    ports: ["8768:8765", "8868:8766"]
+    volumes: ["./data_danglars:/data"]
+
+  villefort:
+    <<: *ferricula
+    ports: ["8769:8765", "8869:8766"]
+    volumes: ["./data_villefort:/data"]
+
+  faria:
+    <<: *ferricula
+    ports: ["8770:8765", "8870:8766"]
+    volumes: ["./data_faria:/data"]
+
+  morrel:
+    <<: *ferricula
+    ports: ["8771:8765", "8871:8766"]
+    volumes: ["./data_morrel:/data"]
+
+  haydee:
+    <<: *ferricula
+    ports: ["8772:8765", "8872:8766"]
+    volumes: ["./data_haydee:/data"]

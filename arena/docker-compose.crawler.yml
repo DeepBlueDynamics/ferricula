@@ -1,0 +1,8 @@
+services:
+  ferricula-docs:
+    image: ferricula:latest
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      CHONK_URL: "https://shivvr.nuts.services"
+    ports: ["8781:8765", "8881:8766"]
+    volumes: ["./data_ferricula_docs:/data"]
