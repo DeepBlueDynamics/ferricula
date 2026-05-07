@@ -70,6 +70,9 @@ docker run -p 8773:8773 -p 8874:8774 -e PORT=8773 -v my-data:/data deepbluedynam
 | `SHIVVR_AUTH_TOKEN` | — | Bearer token for shivvr HTTPS |
 | `RADIO_URL` | — | Entropy source (gnosis-radio) |
 | `CLOCK_TICK_SECS` | `60` | Dream cycle interval |
+| `EDGE_ANCHOR_COUNT` | `10` | Top-fidelity memories scanned every dream |
+| `EDGE_EXPLORER_COUNT` | `30` | Additional memories sampled via radio entropy each dream |
+| `EDGE_MAX_PER_DREAM` | `12` | Cap on new semantic edges per dream cycle |
 
 ## Data
 

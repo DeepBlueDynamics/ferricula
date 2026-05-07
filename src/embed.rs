@@ -173,8 +173,9 @@ fn process_clock_events(
     let shivvr = if inversion::shivvr_available(shivvr_url) { Some(shivvr_url) } else { None };
     while let Ok(event) = clock_rx.try_recv() {
         match event {
-            ClockEvent::DreamTrigger { epoch, intensity, entropy_bytes } => {
-                let report = db.dream_with_intensity(intensity, &[], shivvr);
+            ClockEvent::DreamTrigger { epoch, intensity, entropy_bytes, seed } => {
+                let _ = entropy_bytes;
+                let report = db.dream_with_intensity(intensity, &seed, shivvr);
                 identity.activate_from_report(&report);
                 identity.dream_cool();
                 *last_dream_report = format_dream_report(&report);

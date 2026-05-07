@@ -324,8 +324,9 @@ fn process_clock_events(db: &mut DurableEngine, identity: &mut IdentityState, cl
                 epoch,
                 intensity,
                 entropy_bytes,
+                seed,
             } => {
-                let report = db.dream_with_intensity(intensity, &[], shivvr);
+                let report = db.dream_with_intensity(intensity, &seed, shivvr);
                 identity.activate_from_report(&report);
                 identity.dream_cool();
                 let formatted = format_dream_report(&report);

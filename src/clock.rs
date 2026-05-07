@@ -23,6 +23,9 @@ pub enum ClockEvent {
         epoch: u64,
         intensity: f32,
         entropy_bytes: usize,
+        /// Radio-derived seed bytes consumed for this dream — drives all
+        /// randomness inside the cycle (decay selection, edge candidates).
+        seed: Vec<u8>,
     },
     RadioStatus {
         available: bool,
@@ -255,11 +258,13 @@ fn clock_loop(config: ClockConfig, tx: mpsc::Sender<ClockEvent>, telemetry: Arc<
                 .reservoir_bytes
                 .store(reservoir.len() as u32, Ordering::Relaxed);
 
+            let seed_len = seed.len();
             if tx
                 .send(ClockEvent::DreamTrigger {
                     epoch: tick_epoch,
                     intensity,
-                    entropy_bytes: seed.len(),
+                    entropy_bytes: seed_len,
+                    seed,
                 })
                 .is_err()
             {

@@ -42,6 +42,30 @@ const CONSOLIDATION_THRESHOLD: f32 = 0.85;
 /// Seconds without recall before a memory is considered neglected.
 const NEGLECT_SECONDS: u64 = 86400;
 
+// ── Semantic edge discovery knobs (env-tunable) ──────────────────────────────
+//
+// EDGE_ANCHOR_COUNT     — top-N memories by fidelity included every dream
+// EDGE_EXPLORER_COUNT   — additional memories sampled via radio entropy
+// EDGE_MAX_PER_DREAM    — cap on new edges created in one dream cycle
+//
+// Defaults chosen so the candidate pool covers ~8% of typical active set
+// with a deterministic anchor core that lets repeat-recalls reinforce, plus
+// an entropy-driven explorer ring that lets the long tail get connected.
+
+fn env_usize(key: &str, default: usize) -> usize {
+    std::env::var(key)
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
+fn env_u32(key: &str, default: u32) -> u32 {
+    std::env::var(key)
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
 /// Run one dream cycle at full intensity (manual `dream` command).
 pub fn dream_cycle(
     store: &mut MemoryStore,
@@ -175,7 +199,8 @@ pub fn dream_cycle_with_intensity(
 
     // Phase 3.5: Semantic edge discovery (Intuition archetype — the Weaver)
     if active_roles.contains(&ArchetypeRole::Intuition) {
-        let edges = discover_semantic_edges(store, engine, graph, 5);
+        let max_edges = env_u32("EDGE_MAX_PER_DREAM", 12);
+        let edges = discover_semantic_edges(store, engine, graph, max_edges, entropy_seed);
         report.edges_created += edges;
     }
 
@@ -428,20 +453,66 @@ fn extract_ghost_echo(shivvr_url: &str, vector: &[f32]) -> Option<String> {
 /// Phase 3.5: Discover semantic edges between high-fidelity active memories.
 /// Finds pairs with cosine similarity in [0.7, CONSOLIDATION_THRESHOLD) that
 /// aren't already connected. Capped at `max_edges` new edges per dream.
+///
+/// The candidate pool is **anchors + explorers**:
+///   - top `EDGE_ANCHOR_COUNT` memories by fidelity (deterministic core)
+///   - `EDGE_EXPLORER_COUNT` additional memories sampled via radio entropy
+///
+/// Without the explorer ring the same top-N gets re-scanned forever and edge
+/// growth flatlines once that core's pairs are exhausted. Radio entropy gives
+/// the long tail a chance to surface and connect.
 fn discover_semantic_edges(
     store: &MemoryStore,
     engine: &Engine,
     graph: &mut MemoryGraph,
     max_edges: u32,
+    entropy_seed: &[u8],
 ) -> u32 {
-    // Top 20 active memories by fidelity
-    let mut candidates: Vec<(u32, f32)> = store
+    let anchor_count = env_usize("EDGE_ANCHOR_COUNT", 10);
+    let explorer_count = env_usize("EDGE_EXPLORER_COUNT", 30);
+
+    let mut all: Vec<(u32, f32)> = store
         .in_state(LifecycleState::Active)
         .into_iter()
         .map(|r| (r.id, r.fidelity))
         .collect();
-    candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
-    candidates.truncate(20);
+    all.sort_by(|a, b| b.1.total_cmp(&a.1));
+
+    let anchors: Vec<(u32, f32)> = all.iter().take(anchor_count).cloned().collect();
+    let rest: Vec<(u32, f32)> = all.into_iter().skip(anchor_count).collect();
+
+    // Radio-driven sample of `rest`. Walk entropy bytes pairwise to build
+    // a 16-bit index, modulo rest.len(). Skip duplicates. Empty entropy or
+    // exhausted bytes → deterministic top-up from the head of `rest`.
+    let mut explorers: Vec<(u32, f32)> = Vec::with_capacity(explorer_count);
+    if !entropy_seed.is_empty() && !rest.is_empty() {
+        let mut taken: HashSet<usize> = HashSet::new();
+        let cap = entropy_seed.len() * 4;
+        let mut i = 0usize;
+        while explorers.len() < explorer_count && taken.len() < rest.len() && i < cap {
+            let b1 = entropy_seed[i % entropy_seed.len()] as usize;
+            let b2 = entropy_seed[(i + 1) % entropy_seed.len()] as usize;
+            let idx = ((b1 << 8) | b2) % rest.len();
+            if taken.insert(idx) {
+                explorers.push(rest[idx].clone());
+            }
+            i += 1;
+        }
+    }
+    if explorers.len() < explorer_count {
+        let already: HashSet<u32> = explorers.iter().map(|e| e.0).collect();
+        for r in &rest {
+            if explorers.len() >= explorer_count {
+                break;
+            }
+            if !already.contains(&r.0) {
+                explorers.push(r.clone());
+            }
+        }
+    }
+
+    let mut candidates = anchors;
+    candidates.extend(explorers);
 
     let mut edges_created = 0u32;
 
