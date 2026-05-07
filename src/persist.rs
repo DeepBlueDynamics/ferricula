@@ -296,7 +296,20 @@ impl Persistence {
         if self.snapshot_v4_path.exists() {
             let bytes = fs::read(&self.snapshot_v4_path)?;
             if !bytes.is_empty() {
-                let snap: SnapshotV4 = postcard::from_bytes(&bytes)?;
+                let snap: SnapshotV4 = match postcard::from_bytes::<SnapshotV4>(&bytes) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        // Fall back to pre-MemoryRef layout (v0.9.2 and earlier).
+                        let legacy: LegacySnapshotV4 = postcard::from_bytes(&bytes)
+                            .context("snapshot_v4 parse failed under both current and legacy formats")?;
+                        eprintln!(
+                            "[persist] migrated pre-MemoryRef snapshot ({} rows) — refs default to None; \
+                             next checkpoint will rewrite in current format",
+                            legacy.rows.len()
+                        );
+                        legacy.into_v4()
+                    }
+                };
                 for row in snap.rows {
                     engine.upsert(row)?;
                 }
@@ -480,6 +493,7 @@ impl Persistence {
         let file = File::open(&self.wal_path)?;
         let mut reader = BufReader::new(file);
         let mut out = Vec::new();
+        let mut migrated = 0usize;
         loop {
             let mut len_bytes = [0_u8; 4];
             match reader.read_exact(&mut len_bytes) {
@@ -487,7 +501,19 @@ impl Persistence {
                     let len = u32::from_le_bytes(len_bytes) as usize;
                     let mut payload = vec![0_u8; len];
                     reader.read_exact(&mut payload)?;
-                    let entry: WalEntry = postcard::from_bytes(&payload)?;
+                    // Try the current WalEntry shape first; on failure, fall
+                    // back to the pre-MemoryRef layout (v0.9.2). This handles
+                    // mixed WALs where a v0.9.2 process wrote entries before
+                    // the upgrade and a v0.9.5+ process appended after.
+                    let entry = match postcard::from_bytes::<WalEntry>(&payload) {
+                        Ok(e) => e,
+                        Err(_) => {
+                            let legacy: LegacyWalEntry = postcard::from_bytes(&payload)
+                                .context("WAL entry not parseable under current or legacy layout")?;
+                            migrated += 1;
+                            legacy.into_entry()
+                        }
+                    };
                     out.push(entry);
                 }
                 Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
@@ -495,6 +521,12 @@ impl Persistence {
                 }
                 Err(err) => return Err(err.into()),
             }
+        }
+        if migrated > 0 {
+            eprintln!(
+                "[persist] migrated {} pre-MemoryRef WAL entries — next checkpoint will rewrite",
+                migrated
+            );
         }
         Ok(out)
     }
@@ -601,6 +633,132 @@ enum WalEntry {
         label: String,
         weight: f32,
     },
+}
+
+/// Pre-MemoryRef Row layout. Used as a deserialization fallback when
+/// reading snapshots/WAL written by v0.9.2 and earlier — those binaries
+/// did not include the `refs` field. Postcard is positional so the new
+/// `Option<MemoryRef>` field at the tail breaks read-compatibility despite
+/// `#[serde(default)]` (that attribute is JSON-only). Migrating up sets
+/// `refs: None`; the next checkpoint rewrites in the new format.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LegacyRowV2 {
+    id: u32,
+    tags: std::collections::BTreeMap<String, String>,
+    vector: Vec<f32>,
+}
+
+impl LegacyRowV2 {
+    fn into_row(self) -> Row {
+        Row {
+            id: self.id,
+            tags: self.tags,
+            vector: self.vector,
+            refs: None,
+        }
+    }
+}
+
+/// Pre-MemoryRef SnapshotV4 layout (rows use LegacyRowV2).
+#[derive(Debug, Serialize, Deserialize)]
+struct LegacySnapshotV4 {
+    rows: Vec<LegacyRowV2>,
+    records: Vec<MemoryRecord>,
+    edges: Vec<Edge>,
+    tree: PrimeTreeSnapshot,
+    skg: SkgSnapshot,
+}
+
+impl LegacySnapshotV4 {
+    fn into_v4(self) -> SnapshotV4 {
+        SnapshotV4 {
+            rows: self.rows.into_iter().map(LegacyRowV2::into_row).collect(),
+            records: self.records,
+            edges: self.edges,
+            tree: self.tree,
+            skg: self.skg,
+        }
+    }
+}
+
+/// Pre-MemoryRef WalEntry layout. Variant order MUST match the v0.9.2
+/// `WalEntry` exactly so postcard discriminant indices line up. Variants
+/// containing `Row` use `LegacyRowV2`. `ConnectStructural` is omitted —
+/// it was added in the same commit as `Row.refs`, so v0.9.2 WAL bytes
+/// never contain that discriminant.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum LegacyWalEntry {
+    Upsert(LegacyRowV2),
+    Delete {
+        id: u32,
+    },
+    Remember {
+        row: LegacyRowV2,
+        record: MemoryRecord,
+    },
+    UpdateRecord(MemoryRecord),
+    RemoveMemory {
+        id: u32,
+    },
+    Connect {
+        a: u32,
+        b: u32,
+        label: String,
+        weight: f32,
+    },
+    Disconnect {
+        a: u32,
+        b: u32,
+    },
+    InsertTerm {
+        term: String,
+        memory_id: u32,
+    },
+    ConnectCausal {
+        from: u32,
+        to: u32,
+        label: String,
+        weight: f32,
+    },
+}
+
+impl LegacyWalEntry {
+    fn into_entry(self) -> WalEntry {
+        match self {
+            Self::Upsert(r) => WalEntry::Upsert(r.into_row()),
+            Self::Delete { id } => WalEntry::Delete { id },
+            Self::Remember { row, record } => WalEntry::Remember {
+                row: row.into_row(),
+                record,
+            },
+            Self::UpdateRecord(r) => WalEntry::UpdateRecord(r),
+            Self::RemoveMemory { id } => WalEntry::RemoveMemory { id },
+            Self::Connect {
+                a,
+                b,
+                label,
+                weight,
+            } => WalEntry::Connect {
+                a,
+                b,
+                label,
+                weight,
+            },
+            Self::Disconnect { a, b } => WalEntry::Disconnect { a, b },
+            Self::InsertTerm { term, memory_id } => WalEntry::InsertTerm { term, memory_id },
+            Self::ConnectCausal {
+                from,
+                to,
+                label,
+                weight,
+            } => WalEntry::ConnectCausal {
+                from,
+                to,
+                label,
+                weight,
+            },
+        }
+    }
 }
 
 #[cfg(test)]
