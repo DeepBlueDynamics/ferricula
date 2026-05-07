@@ -8,11 +8,12 @@
 FROM rust:1.88-bookworm AS builder
 
 WORKDIR /build
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 
-# Build release binary
-RUN cargo build --release --locked 2>/dev/null || cargo build --release
+# Build release binary — fail fast if the lockfile is stale instead of
+# silently resolving fresh deps that can drift binary serialization formats.
+RUN cargo build --release --locked
 
 # ============================================================
 FROM debian:bookworm-slim
