@@ -1,0 +1,8 @@
+/target/
+/.runtime/
+/research/nuts-news/source/
+/research/original-ferricula/source/
+/research/original-ferricula/source-export.tar.gz
+/secrets/
+/config/steve.toml
+/.mcp.json

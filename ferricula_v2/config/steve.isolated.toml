@@ -1,0 +1,77 @@
+# Isolated Steve test config — NOT for production.
+#
+# Purpose: paused load/test against recovery memory read-only.
+# Must not grant private_context to any :cloud model.
+# Mount as /app/config/steve.toml via compose.isolated.yaml.
+#
+# Do not copy these settings into steve.example.toml without a separate review.
+# Parsed by RuntimeConfig::load (crates/ferricula-server/src/config.rs).
+
+bind = "0.0.0.0:8875"
+memory_dir = "/data/steve-memory"
+state_dir = "/data/steve-runtime"
+operator_token_env = "FERRICULA_OPERATOR_TOKEN"
+require_operator_auth = true
+
+# Empty: recovered memory must not be authorized onto any model profile.
+# Combined with no :cloud model, this closes the example.toml hole
+# (local_ollama listed in private_context_profiles + glm-5.2:cloud).
+private_context_profiles = []
+
+# Genuinely local name only. Unused while paused; must not end in :cloud.
+ollama_base_url = "http://host.docker.internal:11434/v1"
+ollama_model = "gemma4:e2b"
+
+# Hard stop until an operator changes mode. Scheduler will not enqueue wakes
+# while paused; schedule.enabled is also false as belt-and-suspenders.
+initial_mode = "paused"
+
+[schedule]
+enabled = false
+wakes_per_day = 4
+jitter_minutes = 45
+
+[budgets]
+max_threads_per_wake = 20
+max_autonomous_comments_per_day = 5
+max_autonomous_submissions_per_day = 1
+max_model_usd_per_day = 5.0
+
+[nutnews]
+enabled = false
+mcp_url = "https://news.nuts.services/mcp"
+public_url = "https://news.nuts.services"
+token_env = "NUTNEWS_STEVE_TOKEN"
+handle = "steve"
+allow_writes = false
+
+[autonomy]
+enabled = false
+
+[sleep_cycle]
+enabled = false
+cycles_per_day = 4
+jitter_secs = 2700
+proposal_ttl_secs = 3600
+max_proposals_per_cycle = 3
+mutation = "read_only"
+
+[sleep_cycle.privacy]
+share_private_memory = false
+redact_excerpts = true
+max_excerpt_chars = 600
+
+[mentions]
+enabled = false
+instance = "news.nuts.services"
+steve_handle = "steve"
+
+[overlay]
+enabled = false
+path = "/data/steve-runtime/overlay/overlay.json"
+
+[emotion]
+enabled = false
+
+[advocate]
+enabled = false

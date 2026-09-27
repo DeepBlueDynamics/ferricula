@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ferricula-core",
+    "crates/ferricula-search",
+    "crates/ferricula-semantic",
+    "crates/ferricula-cognition",
+    "crates/ferricula-episode",
+    "crates/ferricula-gates",
+    "crates/ferricula-server",
+]
+
+[workspace.package]
+version = "2.0.0-alpha.0"
+license-file = "LICENSE.md"

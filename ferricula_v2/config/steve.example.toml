@@ -1,0 +1,191 @@
+# Steve runtime configuration — example.
+#
+#   cp config/steve.example.toml config/steve.toml
+#
+# This file is written for the container in compose.yaml (paths under /data,
+# bind on 0.0.0.0 inside the container's network namespace). It contains
+# environment-variable NAMES only — never token or key values. Values are
+# delivered as Docker secrets; see compose.yaml and docs/STEVE_RUNTIME.md.
+#
+# Parsed by RuntimeConfig::load (crates/ferricula-server/src/config.rs).
+# Validation enforces: wakes_per_day in 1..=24 when scheduling is enabled,
+# operator auth required when binding beyond loopback, and token_env fields
+# must be variable names (anything containing '=' or looking like a token
+# is rejected at startup).
+
+# Bind address inside the container. 0.0.0.0 is required so the port mapping
+# can reach the process; compose publishes it on the HOST loopback only
+# (127.0.0.1:8875). Because this is a non-loopback bind, config validation
+# requires require_operator_auth = true.
+# For a bare (non-container) run on the host, use "127.0.0.1:8875" instead.
+bind = "0.0.0.0:8875"
+
+# Steve's memory data directory (identity.json, snapshot_v4.bin, wal.log).
+# Mounted READ-ONLY from the recovery volume during migration; the serve
+# path opens it and replays the WAL in memory without writing back.
+memory_dir = "/data/steve-memory"
+
+# Writable runtime state (runtime-state.json: activity mode, task queue,
+# wake bookkeeping). Separate volume; never mixed with the memory plane.
+state_dir = "/data/steve-runtime"
+
+# NAME of the environment variable holding the operator bearer token.
+# The token itself comes from the Docker secret via the entrypoint shim.
+operator_token_env = "FERRICULA_OPERATOR_TOKEN"
+
+# Every endpoint except GET /health requires `Authorization: Bearer <token>`.
+# Must stay true while bind is non-loopback (enforced at startup).
+require_operator_auth = true
+
+# Cloud profiles are NOT authorized to receive recovered memories by default.
+# To let a built-in profile perform Steve's memory-backed deliberation, list
+# it explicitly, for example: ["anthropic_sonnet"]. Keep empty for local-only
+# private cognition. Unknown profile names fail startup.
+private_context_profiles = ["local_ollama"]
+
+# The host gateway is explicit because 127.0.0.1 inside the container is the
+# Steve container itself. Ollama may serve a local model or proxy a signed-in
+# cloud model. To try GLM-5.2 Cloud, set ollama_model = "glm-5.2:cloud" after
+# signing the host Ollama service into the intended account. A `:cloud` model
+# automatically loses private-memory access unless `local_ollama` is also
+# explicitly listed in private_context_profiles above.
+ollama_base_url = "http://host.docker.internal:11434/v1"
+ollama_model = "glm-5.2:cloud"
+
+# Mode on FIRST boot with an empty state volume: paused | asleep |
+# peripheral | engaged | deliberative. After first boot the persisted mode
+# in runtime-state.json wins across restarts. "asleep" means: no active
+# engagement, but scheduled wakes fire and queued tasks execute. Use
+# "paused" for a hard stop (nothing runs until an operator resumes).
+initial_mode = "asleep"
+
+[schedule]
+# Autonomous wake schedule. The scheduler enqueues a scheduled_wake task
+# whenever (now - last_wake) >= 86400/wakes_per_day, checked once a minute,
+# unless the mode is paused or scheduling is disabled.
+enabled = true
+# Target 3-6 wakes/day for Steve; 4 ≈ one wake every 6 hours.
+wakes_per_day = 4
+# Accepted by the config today; NOT yet applied by the scheduler (see
+# "Dependencies on Rust endpoints" in docs/STEVE_RUNTIME.md). Wakes are
+# currently evenly spaced with no randomization.
+jitter_minutes = 45
+
+[budgets]
+# Max feed threads fetched per wake — enforced today (caps the Nuts News
+# `newest` call).
+max_threads_per_wake = 20
+# Declared ceilings for autonomous activity. NOT yet enforced in code — the
+# current runtime performs no autonomous writes and no model calls, so these
+# are forward guards that MUST be enforced before those paths are wired.
+max_autonomous_comments_per_day = 5
+max_autonomous_submissions_per_day = 1
+max_model_usd_per_day = 5.0
+
+[nutnews]
+# Master switch for the Nuts News connector. The deployed Steve starts in
+# read-only mode: scheduled wakes may observe a bounded public digest.
+enabled = true
+mcp_url = "https://news.nuts.services/mcp"
+public_url = "https://news.nuts.services"
+# NAME of the environment variable holding Steve's Nuts News write token.
+# Only consulted when a write is attempted; reads are public.
+token_env = "NUTNEWS_STEVE_TOKEN"
+handle = "steve"
+# Writes are OFF by default and double-gated: `enabled` and `allow_writes`
+# must both be true AND the token env var must be populated before any
+# comment/submission can leave the runtime. Keep false until the budget
+# enforcement noted above exists.
+allow_writes = false
+
+# ---------------------------------------------------------------------------
+# Phase One sections. Every table below is optional and serde-defaulted:
+# deleting any of them (or this whole block) leaves a valid, safe config.
+# Defaults are the OFF/read-only position; each switch is an operator choice.
+# ---------------------------------------------------------------------------
+
+[autonomy]
+# Event-driven autonomy machine (think-loop successor). OFF by default:
+# the plain scheduler/worker keeps running either way. When enabled, work
+# happens under bounded leases and never compels a response or a write.
+enabled = false
+# Cadence and gate knobs (module defaults shown; all optional).
+tick_secs = 45
+quiet_secs = 30
+idle_resume_secs = 90
+lease_secs = 120
+lease_steps = 8
+# Budget pressure in 0..=1 at/above which model work is refused. The ledger
+# is also re-checked at execution time, not just at lease grant.
+budget_gate = 0.9
+dream_idle_secs = 90
+# Quiet period always defers autonomous wakes; there is no random override.
+honor_quiet_period = true
+
+[sleep_cycle]
+# Sleep/dream planning. Enabled is safe: planning is pure, read-only, and
+# private by default — proposals carry hard call/token/USD ceilings and
+# never mutate memory ("read_only"; "propose_for_approval" only ever emits
+# operator-gated suggestions).
+enabled = true
+cycles_per_day = 4
+jitter_secs = 2700
+proposal_ttl_secs = 3600
+max_proposals_per_cycle = 3
+mutation = "read_only"
+
+[sleep_cycle.privacy]
+# Recovered memory content stays local unless BOTH this is true AND a model
+# profile is explicitly trusted with private_context (see the [models] note
+# below). Validation refuses sharing with redaction off.
+share_private_memory = false
+redact_excerpts = true
+max_excerpt_chars = 600
+
+[mentions]
+# Nuts mention ingestion (inbound only: cursor, dedupe, considerations).
+# OFF by default. Requires nutnews.enabled, and the identity fields below
+# must agree with [nutnews] (handle) and the public_url host (instance) —
+# mismatches fail startup. Considering a mention never compels a reply.
+enabled = false
+instance = "news.nuts.services"
+steve_handle = "steve"
+dedupe_capacity = 4096
+consideration_capacity = 256
+max_apply_per_batch = 500
+max_text_bytes = 16384
+max_pending_per_actor = 4
+
+[overlay]
+# Append-only overlay for the recovered memory base (MEMORY_DREAM_SPEC
+# Stage 2). OFF by default. The recovered base is immutable regardless:
+# the overlay path MUST live outside memory_dir (enforced at startup), and
+# destructive/promotion events inside the overlay are operator-approval
+# gated by the module itself.
+enabled = false
+path = "/data/steve-runtime/overlay/overlay.json"
+max_events = 65536
+max_text_bytes = 16384
+max_note_bytes = 4096
+max_tags = 16
+max_dream_members = 64
+
+[emotion]
+# Emotion/somatic state surface (Phase Two). Enable-only for now.
+enabled = false
+
+[advocate]
+# Values-alignment reviews (Phase Three). Advisory only; verdicts write to
+# the overlay (never the semantic index), so enabling this requires
+# overlay.enabled = true — validation enforces it.
+enabled = false
+reviews_per_day = 1
+
+# Model routing defaults are supplied by ModelRoutingConfig when no [models]
+# table is present: mechanical work uses no model; scan/social/deliberation
+# prefer local Ollama (`gemma4:e2b`); Anthropic profiles exist as fallbacks for
+# non-private work. Only the local profile has `private_context`, so recovered
+# memories cannot leave the machine accidentally. To authorize a cloud model
+# for Steve's memory-backed deliberation, provide a complete [models] config
+# and explicitly add `private_context` to that profile's capabilities. See
+# docs/STEVE_RUNTIME.md. API keys are always environment-variable names.
