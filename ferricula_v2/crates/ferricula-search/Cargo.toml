@@ -1,0 +1,15 @@
+[package]
+name = "ferricula-search"
+version.workspace = true
+edition = "2021"
+license-file.workspace = true
+
+[dependencies]
+tantivy-fst = "0.5"
+ureq = { version = "2.9", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[[bin]]
+name = "lume"
+path = "src/main.rs"

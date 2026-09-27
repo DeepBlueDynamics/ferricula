@@ -1,0 +1,10 @@
+# Allowlist build context. Everything is excluded unless re-included below,
+# so agent memory (.runtime/), research data, secrets, and local config can
+# never leak into an image layer.
+*
+!Cargo.toml
+!Cargo.lock
+!LICENSE.md
+!THIRD_PARTY_NOTICES.md
+!crates
+crates/**/target

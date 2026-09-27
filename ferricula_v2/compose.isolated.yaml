@@ -1,0 +1,65 @@
+# Isolated Steve test stack. Standalone — do not merge with compose.yaml
+# (merge would keep production steve-v2-runtime).
+#
+# After the in-flight Piranha build of ferricula-v2-steve:2.0.0-alpha.0 finishes:
+#   cd ferricula_v2
+#   docker compose -f compose.isolated.yaml -p ferricula-v2-steve-test config -q
+#   docker compose -f compose.isolated.yaml -p ferricula-v2-steve-test up -d --no-build
+# API: 127.0.0.1:18875
+# Do not run this while a host docker compose build is still running.
+
+name: ferricula-v2-steve-test
+
+services:
+  steve:
+    image: ferricula-v2-steve:2.0.0-alpha.0
+    container_name: steve-jobs-v2-test
+    labels:
+      - "ferricula.identity=steve"
+      - "ferricula.mcp_port=18875"
+      - "ferricula.mcp_path=/mcp"
+      - "ferricula.token_env=FERRICULA_OPERATOR_TOKEN"
+      - "ferricula.bridge=scripts/steve_mcp_bridge.py"
+    command: ["serve", "--config", "/app/config/steve.toml"]
+    init: true
+    restart: "no"
+    stop_grace_period: 30s
+    ports:
+      - "127.0.0.1:18875:8875"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      FERRICULA_OPERATOR_TOKEN_FILE: /run/secrets/ferricula_operator_token
+    secrets:
+      - ferricula_operator_token
+    volumes:
+      - ./config/steve.isolated.toml:/app/config/steve.toml:ro
+      - steve-memory:/data/steve-memory:ro
+      - steve-runtime-test:/data/steve-runtime
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 2
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8875/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+secrets:
+  ferricula_operator_token:
+    file: ./secrets/ferricula_operator_token
+
+volumes:
+  steve-memory:
+    external: true
+    name: steve-jobs-data-recovery-20260713
+  steve-runtime-test:
+    name: steve-v2-runtime-test

@@ -1,0 +1,19 @@
+[package]
+name = "ferricula-cognition"
+version.workspace = true
+edition = "2024"
+license-file.workspace = true
+
+[dependencies]
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hkdf = "0.12"
+sha2 = "0.10"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+rustls = { version = "0.23", features = ["ring"] }
+webpki-roots = "0.26"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+tokio = { version = "1", features = ["full"] }
+
+ferricula-core = { path = "../ferricula-core" }

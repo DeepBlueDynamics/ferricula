@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Steve · Conversation</title>
+<style>
+:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;color:#e8eee9;background:#101917;line-height:1.55;--muted:#a6bbb1;--line:#32483f;--accent:#b3e2be}
+*{box-sizing:border-box}body{margin:0}button,input,textarea{font:inherit}button,input,textarea,summary{outline-offset:4px}button:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--accent)}button{border:1px solid var(--line);border-radius:10px;padding:10px 16px;background:#243c31;color:#ecf5ee;cursor:pointer}button:hover:not(:disabled){background:#365340}button:disabled{opacity:.45;cursor:not-allowed}input,textarea{border:1px solid var(--line);border-radius:10px;padding:12px;background:#111f19;color:#edf4ef;width:100%;min-width:0}textarea{resize:vertical;min-height:104px;max-height:320px}label{display:block;font-size:.85rem;color:#d1e0d6;margin-bottom:6px}small,.muted{color:var(--muted)}.shell{max-width:1080px;margin:auto;padding:24px;display:grid;grid-template-columns:250px minmax(0,1fr);gap:30px}.sidebar{position:sticky;top:24px;align-self:start}.brand{font-size:1.9rem;font-weight:650;letter-spacing:-.05em;margin:0}.eyebrow{font-size:.72rem;text-transform:uppercase;letter-spacing:.15em;color:var(--accent)}.intro{font-size:.9rem;color:var(--muted)}.connection{padding:18px;border:1px solid var(--line);border-radius:14px;margin:24px 0;background:#17261f}.connection button{width:100%;margin-top:10px}.badge{display:inline-flex;align-items:center;gap:8px;font-size:.82rem;color:var(--muted);margin:8px 0}.badge:before{content:"";width:8px;height:8px;border-radius:50%;background:#82978c}.badge.connected:before{background:#a7e5b4}.badge.error:before{background:#ffa69e}.fine{font-size:.75rem;line-height:1.5}.conversation-tools{display:grid;gap:10px}.conversation-id{overflow-wrap:anywhere;font-family:ui-monospace,monospace;font-size:.7rem;color:var(--muted)}.main-header{border-bottom:1px solid var(--line);padding:7px 0 18px}h1{font-size:1.35rem;margin:0;font-weight:550}.main-header p{margin:5px 0 0;color:var(--muted);font-size:.86rem}#turns{min-height:280px;padding:22px 0}.empty{padding:40px 16px;text-align:center;color:var(--muted)}.empty strong{font-weight:500;font-size:1.2rem;color:#d8e8de;display:block;margin-bottom:8px}.turn{margin-bottom:28px}.bubble{padding:17px 19px;border-radius:14px;margin:10px 0;overflow-wrap:anywhere}.bubble.user{background:#213b2e;margin-left:32px}.bubble.steve{background:#192820;border:1px solid var(--line);margin-right:16px}.speaker{display:block;font-size:.75rem;font-weight:600;letter-spacing:.04em;margin-bottom:8px;color:var(--accent)}.body{white-space:pre-wrap;margin:0}.turn-state{font-size:.75rem;color:var(--muted);margin-top:10px}details{margin:10px 0;font-size:.82rem}summary{cursor:pointer;color:#b8cebf;padding:6px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.75rem;max-height:320px;overflow:auto}.evidence{padding:12px 15px;border-left:2px solid #80b092;background:#15251c;margin:10px 0}.evidence p{margin:6px 0;overflow-wrap:anywhere;white-space:pre-wrap}.evidence .report{color:#e3eee5}.composer{border-top:1px solid var(--line);padding:18px 0;background:#101917}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}.primary{background:#b3e2be;color:#112417;border-color:#b3e2be;font-weight:600}.primary:hover:not(:disabled){background:#c8f1d0}.secondary{font-size:.82rem}.hint{font-size:.72rem;color:var(--muted);margin-left:auto}#status{font-size:.85rem;margin:12px 0;min-height:26px;overflow-wrap:anywhere}#status.error{color:#ffb4a9}#counter{font-variant-numeric:tabular-nums}.spinner{display:none}body.busy .spinner{display:inline}.spinner:after{content:" · working"}.notice{font-size:.75rem;color:var(--muted);margin-top:12px}
+@media(max-width:720px){.shell{display:block;padding:16px}.sidebar{position:static}.intro{margin:4px 0}.connection{margin:16px 0;padding:14px}.conversation-tools{grid-template-columns:1fr 1fr}.connection form{display:grid;grid-template-columns:1fr auto;gap:8px}.connection form label{grid-column:1/-1}.connection button{margin:0;width:auto}.conversation-id{margin:10px 0 20px}.main-header{padding-top:6px}.bubble.user{margin-left:15px}.bubble.steve{margin-right:0}#turns{min-height:180px}.hint{width:100%;margin:0}.brand{font-size:1.6rem}}
+</style>
+</head>
+<body>
+<div class="shell">
+<aside class="sidebar" aria-label="Connection and conversation">
+<div class="eyebrow">Ferricula · local conversation</div>
+<p class="brand">Steve</p>
+<p class="intro">A place to talk things through.</p>
+<section class="connection" aria-label="Connect to Steve">
+<div id="connection" class="badge">Not connected</div>
+<form id="connect-form">
+<label for="token">Operator token</label>
+<input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your token" required aria-describedby="token-note">
+<button id="connect" type="submit">Connect</button>
+</form>
+<p id="token-note" class="fine muted">Your token stays in this page only. Reconnect after refreshing.</p>
+<button id="disconnect" type="button" hidden>Disconnect</button>
+</section>
+<div class="conversation-tools">
+<button id="new" type="button">New conversation</button>
+<button id="load" type="button">Reload history</button>
+</div>
+<p class="fine muted">Current conversation</p>
+<p id="conversation" class="conversation-id"></p>
+<details><summary>Open a saved conversation</summary>
+<label for="saved-id">Conversation ID</label>
+<input id="saved-id" type="text" spellcheck="false" placeholder="Paste a conversation ID">
+<button id="open" type="button">Open conversation</button>
+<p class="fine muted">Keep the ID above to reopen this thread later.</p>
+</details>
+<p class="notice">Conversations are saved separately from the recovery memory. A new conversation starts a new thread; it does not erase memory.</p>
+</aside>
+<main>
+<header class="main-header">
+<h1>Talk to Steve</h1>
+<p id="runtime-note">Connect to begin or continue your conversation.</p>
+</header>
+<section id="turns" aria-label="Conversation"></section>
+<form id="form" class="composer">
+<label for="message">Your message</label>
+<textarea id="message" maxlength="8192" placeholder="What’s on your mind?" aria-describedby="compose-help" required></textarea>
+<div class="actions">
+<button id="send" class="primary" type="submit">Send message</button>
+<button id="unresolved" class="secondary" type="button">Save as unresolved observation</button>
+<span id="counter" class="hint">0 / 8192 bytes</span>
+</div>
+<p id="compose-help" class="fine muted">Ctrl/⌘ + Enter to send. Enter adds a line. Saving an observation records your text without asking the model for a reply.</p>
+<div id="status" role="status" aria-live="polite"></div>
+<span class="spinner" aria-hidden="true"></span>
+</form>
+</main>
+</div>
+<script>
+'use strict';
+const el=id=>document.getElementById(id);
+let conversationId;
+try{conversationId=sessionStorage.getItem('steve-conversation')}catch(_){}
+if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId||''))conversationId=crypto.randomUUID();
+let connected=false,busy=false,token='',turnCount=0;
+const bytes=text=>new TextEncoder().encode(text).length;
+function message(text,error=false){el('status').textContent=text;el('status').className=error?'error':''}
+function showId(){try{sessionStorage.setItem('steve-conversation',conversationId)}catch(_){}el('conversation').textContent=conversationId}
+function controls(){
+const valid=el('message').value.trim().length>0&&bytes(el('message').value)<=8192;
+for(const id of ['new','load','disconnect','open','saved-id'])el(id).disabled=busy||!connected;
+el('connect').disabled=busy;el('token').disabled=busy||connected;el('message').disabled=busy;
+el('send').disabled=busy||!connected||!valid;el('unresolved').disabled=busy||!connected||!valid;
+el('counter').textContent=bytes(el('message').value)+' / 8192 bytes';
+document.body.classList.toggle('busy',busy);el('turns').setAttribute('aria-busy',String(busy));
+}
+function setBusy(value){busy=value;controls()}
+function setConnected(value,label){connected=value;el('connection').textContent=label||(value?'Connected':'Not connected');el('connection').className='badge'+(value?' connected':'');el('disconnect').hidden=!value;el('connect').hidden=value;controls()}
+function empty(){el('turns').replaceChildren();turnCount=0;const box=document.createElement('div');box.className='empty';const title=document.createElement('strong');title.textContent='Start with whatever is on your mind.';const desc=document.createElement('span');desc.textContent='A question, an observation, or something you haven’t figured out yet.';box.append(title,desc);el('turns').append(box)}
+function field(parent,label,value){const p=document.createElement('p');const strong=document.createElement('strong');strong.textContent=label+': ';p.append(strong,document.createTextNode(value==null||value===''?'Not recorded':String(value)));parent.append(p)}
+function show(turn){
+if(!turnCount)el('turns').replaceChildren();turnCount++;
+const article=document.createElement('article');article.className='turn';
+for(const [who,text,style] of [['You',turn.request.message,'user'],['Steve · model-generated',turn.reply||turn.error||('Response '+turn.status),'steve']]){
+const bubble=document.createElement('div');bubble.className='bubble '+style;const name=document.createElement('span');name.className='speaker';name.textContent=who;const body=document.createElement('p');body.className='body';body.textContent=text;bubble.append(name,body);article.append(bubble);
+}
+const state=document.createElement('div');state.className='turn-state';state.textContent=[turn.status,turn.model].filter(Boolean).join(' · ');article.append(state);
+const cards=Array.isArray(turn.evidence_cards)?turn.evidence_cards:(turn.evidence_cards?.canonical||[]);
+if(cards.length){
+const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Recorded evidence · '+cards.length+' report'+(cards.length===1?'':'s');details.append(summary);
+const note=document.createElement('p');note.textContent='Original reports are separate from Steve’s interpretation. A search that found nothing establishes only what was not seen within that scope.';details.append(note);
+for(const card of cards){const record=document.createElement('div');record.className='evidence';field(record,'Recorded report',card.attributed_content??card.original_report);field(record,'Reported location',card.location);field(record,'Searched scope',card.scoped_search?.scope??card.inspected_scope);field(record,'Search result',card.scoped_search?.result??card.search_result);field(record,'Interpretation status',card.current_hypothesis_status??card.interpretation_status);field(record,'Source event',card.event_id);details.append(record)}article.append(details);
+}
+const details=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent='Request and memory details';pre.textContent=JSON.stringify({request_id:turn.request.request_id,reported_origin:turn.request.reported_origin,origin_verified:false,status:turn.status,model:turn.model,memory_candidates:turn.memory_candidates,episode_candidates:turn.episode_candidates},null,2);details.append(summary,pre);article.append(details);el('turns').append(article);
+}
+async function api(path,body){
+const response=await fetch(path,{method:body===undefined?'GET':'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store',redirect:'error'});
+let data;try{data=await response.json()}catch(_){throw Error('Server returned an unreadable response ('+response.status+').')}
+if(!response.ok){if(response.status===401){token='';setConnected(false,'Token not accepted');el('token').value=''}throw Error(response.status===401?'Token not accepted. Paste the operator token and reconnect.':data.error||('Request failed ('+response.status+').'))}
+return data;
+}
+async function loadHistory(){const data=await api('/chat/'+conversationId);if(!Array.isArray(data.turns))throw Error('History response was not recognized.');empty();data.turns.forEach(show);return data.turns}
+function scrollToLatest(){el('form').scrollIntoView({block:'end',behavior:'smooth'})}
+el('connect-form').onsubmit=async event=>{
+event.preventDefault();if(busy)return;token=el('token').value.trim();if(!token){message('Paste your operator token first.',true);return}
+setBusy(true);message('Connecting to Steve…');
+try{const status=await api('/status');setConnected(true);el('token').value='';el('runtime-note').textContent='Connected to '+(status.identity||'Steve')+' · background '+(status.mode||'status unknown')+'. You can talk here.';const turns=await loadHistory();message(turns.length?'Loaded '+turns.length+' saved turns.':'Connected. Send a message to begin.')}
+catch(error){if(!connected)token='';message(error.message,true)}
+finally{setBusy(false);if(connected)el('message').focus()}
+};
+el('disconnect').onclick=()=>{if(busy)return;token='';el('token').value='';setConnected(false);el('runtime-note').textContent='Disconnected. Saved conversations remain on the server.';message('Disconnected. Paste your token to reconnect.');el('token').focus()};
+el('new').onclick=()=>{if(busy||!connected)return;conversationId=crypto.randomUUID();showId();empty();message('New conversation. Earlier conversations remain saved.');el('message').focus()};
+el('load').onclick=async()=>{if(busy||!connected)return;setBusy(true);message('Loading saved conversation…');try{const turns=await loadHistory();message('Loaded '+turns.length+' saved turns.')}catch(error){message(error.message,true)}finally{setBusy(false)}};
+el('open').onclick=async()=>{
+if(busy||!connected)return;
+const id=el('saved-id').value.trim();
+if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)){message('Enter a valid conversation ID.',true);return}
+setBusy(true);message('Opening saved conversation…');
+try{const data=await api('/chat/'+id);if(!Array.isArray(data.turns))throw Error('History response was not recognized.');if(!data.turns.length)throw Error('No saved turns found for that ID. Your current conversation is unchanged.');conversationId=id;showId();empty();data.turns.forEach(show);message('Opened '+data.turns.length+' saved turns.');el('saved-id').value=''}
+catch(error){message(error.message,true)}
+finally{setBusy(false)}
+};
+el('message').oninput=controls;
+el('message').onkeydown=event=>{if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();if(!el('send').disabled)el('form').requestSubmit()}};
+el('unresolved').onclick=async()=>{
+if(busy||!connected)return;const content=el('message').value.trim();if(!content||bytes(content)>8192){message('Enter an observation up to 8192 bytes.',true);return}
+setBusy(true);message('Saving your unresolved observation…');
+try{const saved=await api('/memory/episodes',{type:'observation',payload:{report_id:crypto.randomUUID(),event_time:null,ingested_at:0,modality:'text',location:'',task_context:'operator conversation '+conversationId,content,scoped_search:null,source_actor:'operator (reported human)',is_unresolved:true,tags:[]}});message('Observation saved. You can now ask Steve about it. Record: '+saved.event_id)}
+catch(error){message(error.message+' If the connection was interrupted, verify the report before saving again.',true)}
+finally{setBusy(false);el('message').focus()}
+};
+el('form').onsubmit=async event=>{
+event.preventDefault();if(busy||!connected)return;
+const text=el('message').value;if(!text.trim()||bytes(text)>8192){message('Enter a message up to 8192 bytes.',true);return}
+const request={request_id:crypto.randomUUID(),conversation_id:conversationId,message:text,reported_origin:'human'};
+setBusy(true);message('Steve is thinking. Your message may take a moment…');
+try{const turn=await api('/chat',request);show(turn);if(turn.status==='completed'){el('message').value='';message('Reply received.')}else{message('Response '+turn.status+'. Your draft is retained; reload history before retrying.',true)}scrollToLatest()}
+catch(error){message(error.message+' Your request may still finish. Reload history before sending again. Request: '+request.request_id,true)}
+finally{setBusy(false);el('message').focus()}
+};
+showId();empty();controls();
+</script>
+</body>
+</html>

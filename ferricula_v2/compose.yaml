@@ -1,0 +1,104 @@
+# Steve runtime — production compose file.
+#
+# Prereqs (see docs/STEVE_RUNTIME.md for the full runbook):
+#   1. The safe example config is mounted directly. Copy it and update the
+#      bind mount below only when you need a custom model/provider table.
+#   2. Create the operator token secret file (mode 0600, do not commit):
+#        mkdir -p secrets
+#        openssl rand -hex 32 > secrets/ferricula_operator_token
+#      Add `secrets/` and `config/steve.toml` to .gitignore if not present.
+#   3. docker compose up -d
+#
+# Volume policy:
+#   - The ORIGINAL `steve-jobs-data` volume is never referenced here.
+#   - The recovery copy `steve-jobs-data-recovery-20260713` is mounted
+#     READ-ONLY for migration; this stack cannot mutate it.
+#   - All v2 runtime state goes to the separate writable `steve-v2-runtime`
+#     volume (task queue, activity mode, wake bookkeeping).
+
+name: ferricula-v2-steve
+
+services:
+  steve:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ferricula-v2-steve:2.0.0-alpha.0
+    container_name: steve-jobs-v2
+    command: ["serve", "--config", "/app/config/steve.toml"]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+    # Publish on host loopback ONLY. Remote operator access goes over an SSH
+    # tunnel or an authenticated TLS reverse proxy — never a direct publish.
+    ports:
+      - "127.0.0.1:8875:8875"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # Names and file paths only — secret VALUES live in Docker secret files
+    # and are resolved by the image entrypoint (VAR_FILE -> VAR).
+    environment:
+      FERRICULA_OPERATOR_TOKEN_FILE: /run/secrets/ferricula_operator_token
+      # Enable alongside the matching entries in the `secrets:` blocks below
+      # when the corresponding capability is turned on in config/steve.toml:
+      # NUTNEWS_STEVE_TOKEN_FILE: /run/secrets/nutnews_steve_token
+      # ANTHROPIC_API_KEY_FILE: /run/secrets/anthropic_api_key
+
+    secrets:
+      - ferricula_operator_token
+      # - nutnews_steve_token
+      # - anthropic_api_key
+
+    volumes:
+      # Runtime config (committable: contains env-var NAMES, never values).
+      - ./config/steve.example.toml:/app/config/steve.toml:ro
+      # Steve's memory — the recovery copy, read-only during migration.
+      - steve-memory:/data/steve-memory:ro
+      # v2 runtime state — the only writable persistence.
+      - steve-runtime:/data/steve-runtime
+
+    # Hardening: immutable root fs, no privilege escalation, no capabilities.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 2
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8875/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+secrets:
+  ferricula_operator_token:
+    file: ./secrets/ferricula_operator_token
+  # nutnews_steve_token:
+  #   file: ./secrets/nutnews_steve_token
+  # anthropic_api_key:
+  #   file: ./secrets/anthropic_api_key
+
+volumes:
+  # Pre-existing recovery copy created 2026-07-13 (docs/STEVE_RECOVERY.md).
+  # `external: true` means compose will never create, alter, or remove it.
+  steve-memory:
+    external: true
+    name: steve-jobs-data-recovery-20260713
+  # Fresh, compose-managed writable state volume for the v2 runtime.
+  steve-runtime:
+    name: steve-v2-runtime
